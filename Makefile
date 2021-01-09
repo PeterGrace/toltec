@@ -6,6 +6,10 @@ RECIPES=$(shell ls package/)
 RECIPES_PUSH=$(foreach app, $(RECIPES), $(app)-push)
 RECIPES_CLEAN=$(foreach app, $(RECIPES), $(app)-clean)
 
+ifdef REMOTE_REPO
+    REMOTE_REPO_ARG=--remote-repo "$(REMOTE_REPO)"
+endif
+
 define USAGE
 Building packages:
 
@@ -40,10 +44,13 @@ help:
 	@echo "$$USAGE"
 
 repo:
-	./scripts/repo-build package build/package build/repo "$$remote_repo"
+	./scripts/repo-build $(REMOTE_REPO_ARG) package build/package build/repo
 
 repo-local:
-	./scripts/repo-build -l package build/package build/repo "$$remote_repo"
+	./scripts/repo-build --local package build/package build/repo
+
+repo-new:
+	./scripts/repo-build --no-fetch $(REMOTE_REPO_ARG) package build/package build/repo
 
 repo-new:
 	./scripts/repo-build -n package build/package build/repo "$$remote_repo"
@@ -52,11 +59,11 @@ repo-check:
 	./scripts/repo-check build/repo
 
 $(RECIPES): %:
-	./scripts/package-build package/"${@}" build/package/"${@}"
+	./scripts/package-build package/"$(@)" build/package/"$(@)"
 
 $(RECIPES_PUSH): %:
-	ssh root@"${HOST}" mkdir -p .cache/opkg
-	scp build/package/"$(@:%-push=%)"/*/*.ipk root@"${HOST}":.cache/opkg
+	ssh root@"$(HOST)" mkdir -p .cache/opkg
+	scp build/package/"$(@:%-push=%)"/*/*.ipk root@"$(HOST)":.cache/opkg
 
 format:
 	@echo "==> Checking the formatting of shell scripts"
