@@ -1,183 +1,33 @@
-#!/usr/bin/env python3
+# Copyright (c) 2021 The Toltec Contributors
+# SPDX-License-Identifier: MIT
 
+"""
+Load and execute recipes.
+
+A package is a final user-installable software archive. A recipe is a Bash file
+which contains the instructions necessary to build one or more related
+packages (in the latter case, it is called a split package).
+"""
+
+from . import bash
 from itertools import product
-import shlex
-import subprocess
+from typing import Any
 
-def _parse_string(token):
-    return token.replace('\\$', '$')
-
-def _parse_array(lexer):
-    assert lexer.get_token() == '('
-    result = []
-
-    while True:
-        token = lexer.get_token()
-        assert token != lexer.eof
-
-        if token == ')':
-            break
-
-        assert token == '['
-        index = int(lexer.get_token())
-        assert lexer.get_token() == ']'
-        assert lexer.get_token() == '='
-        value = _parse_string(lexer.get_token())
-
-        # Grow the result array so that the index exists
-        if index >= len(result):
-            result.extend([None] * (index - len(result) + 1))
-
-        result[index] = value
-
-    return result
-
-def _parse_dict(lexer):
-    assert lexer.get_token() == '('
-    result = {}
-
-    while True:
-        token = lexer.get_token()
-        assert token != lexer.eof
-
-        if token == ')':
-            break
-
-        assert token == '['
-        key = lexer.get_token()
-        assert lexer.get_token() == ']'
-        assert lexer.get_token() == '='
-        value = _parse_string(lexer.get_token())
-
-        result[key] = value
-
-    return result
-
-def _parse_var(lexer):
-    flags_token = lexer.get_token()
-
-    if flags_token != '--':
-        var_flags = set(flags_token[1:])
-    else:
-        var_flags = set()
-
-    var_name = lexer.get_token()
-    lookahead = lexer.get_token()
-
-    if lookahead == '=':
-        if 'a' in var_flags:
-            var_value = _parse_array(lexer)
-        elif 'A' in var_flags:
-            var_value = _parse_dict(lexer)
-        else:
-            var_value = _parse_string(lexer.get_token())
-    else:
-        lexer.push_token(lookahead)
-        var_value = None
-
-    return var_name, var_value
-
-def _parse_func(lexer):
-    assert lexer.get_token() == '{'
-    brace_depth = 1
-
-    start_byte = lexer.instream.tell()
-
-    while brace_depth > 0:
-        token = lexer.get_token()
-        assert token != lexer.eof
-
-        if token == '{':
-            brace_depth += 1
-        elif token == '}':
-            brace_depth -= 1
-
-    end_byte = lexer.instream.tell() - 1
-    return start_byte, end_byte
-
-def _get_declarations(src):
-    # Run the script and ask for all declared functions and variables
-    src += '''
-declare -f
-declare -p
-'''
-
-    declarations_subshell = subprocess.run(
-        ['/usr/bin/env', 'bash'],
-        input=src.encode(),
-        capture_output=True,
-        env={})
-
-    declarations = declarations_subshell.stdout.decode()
-
-    # Parse `declare` statements and function statements
-    lexer = shlex.shlex(declarations, posix=True)
-    lexer.wordchars = lexer.wordchars + '-'
-
-    variables = {}
-    functions = {}
-
-    while True:
-        token = lexer.get_token()
-
-        if token == lexer.eof:
-            break
-
-        next_token = lexer.get_token()
-
-        if token == 'declare' and next_token[0] == '-':
-            lexer.push_token(next_token)
-            name, value = _parse_var(lexer)
-            variables[name] = value
-        else:
-            assert next_token == '('
-            assert lexer.get_token() == ')'
-            start, end = _parse_func(lexer)
-            functions[token] = declarations[start:end]
-
-    return variables, functions
 
 class InvalidRecipeError(Exception):
     pass
 
-def _check_field(variables, name, expected_type, required):
-    if required and name not in variables:
-        raise InvalidRecipeError(f'Missing required field {name}')
-
-    if name in variables:
-        if type(variables[name]) != expected_type:
-            raise InvalidRecipeError(f'Field {name} must be of type \
-{expected_type.__name__}, got {type(variables[name]).__name__}')
-
-def _read_recipe_header(variables):
-    header = {}
-
-    _check_field(variables, 'pkgnames', list, True)
-    header['pkgnames'] = variables['pkgnames']
-
-    _check_field(variables, 'timestamp', str, True)
-    header['timestamp'] = variables['timestamp']
-
-    _check_field(variables, 'maintainer', str, True)
-    header['maintainer'] = variables['maintainer']
-
-    _check_field(variables, 'image', str, False)
-    header['image'] = variables.get('image')
-
-    _check_field(variables, 'source', list, False)
-    header['source'] = variables.get('source', [])
-
-    _check_field(variables, 'noextract', list, False)
-    header['noextract'] = variables.get('noextract', [])
-
-    _check_field(variables, 'sha256sums', list, False)
-    header['sha256sums'] = variables.get('sha256sums', [])
-
-    return header
 
 class Recipe:
-    def __init__(self, name, source):
-        declarations = _get_declarations(source)
+    def __init__(self, name: str, source: str):
+        """
+        Load a recipe from a Bash source.
+
+        :param name: name of the recipe
+        :param source: source string of the recipe
+        :raises InvalidRecipeError: if the recipe contains an error
+        """
+        declarations = bash.get_declarations(source)
         variables, functions = declarations
 
         self.name = name
@@ -210,14 +60,129 @@ which has a build() step')
         self.actions['prepare'] = functions.get('prepare', '')
 
     @classmethod
-    def from_file(cls, name, path):
+    def from_file(cls, name: str, path: str) -> 'Recipe':
+        """Load a recipe from a file."""
         with open(path, 'r') as recipe:
             return Recipe(name, recipe.read())
 
-    def control(self):
+    def control(self) -> str:
+        """Get the recipe-wide control fields."""
         return f"Maintainer: {self.header['maintainer']}\n"
 
-def _read_package_header(variables):
+
+class Package:
+    def __init__(
+        self,
+        name: str,
+        parent_declarations: tuple[bash.Variables, bash.Functions],
+        source: str
+    ):
+        """
+        Load a package from a Bash source.
+
+        :param name: name of the package
+        :param parent_declarations: variables and functions from the recipe
+            which declares this package
+        :param source: source string of the package (either the full recipe
+            script if it contains only a single package, or the package
+            script for split packages)
+        :raises InvalidRecipeError: if the package contains an error
+        """
+        parent_variables, parent_functions = parent_declarations
+        variables, functions = bash.get_declarations(source)
+        variables = {**parent_variables, **variables}
+        functions = {**parent_functions, **functions}
+
+        self.name = name
+        self.header = _read_package_header(variables)
+
+        if 'package' not in functions:
+            raise InvalidRecipeError('Missing required function package() \
+for package {self.name}')
+
+        self.action = functions['package']
+        self.install = {}
+
+        for rel, step in product(('pre', 'post'), ('remove', 'upgrade')):
+            self.install[rel + step] = functions.get(rel + step, '')
+
+    def id(self) -> str:
+        """Get the unique identifier of this package."""
+        return '_'.join((self.name, self.header['pkgver'], self.header['arch']))
+
+    def filename(self) -> str:
+        """Get the name of the archive corresponding to this package."""
+        return self.id() + '.ipk'
+
+    def control(self):
+        """Get the package-specific control fields."""
+        control = f'''Package: {self.name}
+Version: {self.header['pkgver']}
+Section: {self.header['section']}
+Architecture: {self.header['arch']}
+Description: {self.header['pkgdesc']}
+HomePage: {self.header['url']}
+License: {self.header['license']}
+'''
+
+        if self.header['depends']:
+            control += f"Depends: {', '.join(self.header['depends'])}\n"
+
+        if self.header['conflicts']:
+            control += f"Conflicts: {', '.join(self.header['conflicts'])}\n"
+
+        return control
+
+
+def _check_field(
+    variables: dict[str, Any], name: str,
+    expected_type: type, required: bool
+):
+    """
+    Check that a field is properly defined in a recipe.
+
+    :param variables: set of variables declared in the recipe
+    :param name: name of the field to check
+    :param expected_type: if the field is defined, its expected type
+    :param required: if true, requires that the field be defined
+    """
+    if required and name not in variables:
+        raise InvalidRecipeError(f'Missing required field {name}')
+
+    if name in variables:
+        if type(variables[name]) != expected_type:
+            raise InvalidRecipeError(f'Field {name} must be of type \
+{expected_type.__name__}, got {type(variables[name]).__name__}')
+
+def _read_recipe_header(variables: dict[str, Any]) -> dict[str, Any]:
+    """Read and check all recipe-wide fields."""
+    header = {}
+
+    _check_field(variables, 'pkgnames', list, True)
+    header['pkgnames'] = variables['pkgnames']
+
+    _check_field(variables, 'timestamp', str, True)
+    header['timestamp'] = variables['timestamp']
+
+    _check_field(variables, 'maintainer', str, True)
+    header['maintainer'] = variables['maintainer']
+
+    _check_field(variables, 'image', str, False)
+    header['image'] = variables.get('image')
+
+    _check_field(variables, 'source', list, False)
+    header['source'] = variables.get('source', [])
+
+    _check_field(variables, 'noextract', list, False)
+    header['noextract'] = variables.get('noextract', [])
+
+    _check_field(variables, 'sha256sums', list, False)
+    header['sha256sums'] = variables.get('sha256sums', [])
+
+    return header
+
+def _read_package_header(variables: dict[str, Any]) -> dict[str, Any]:
+    """Read and check all package-specific fields."""
     header = {}
 
     _check_field(variables, 'pkgver', str, True)
@@ -245,47 +210,3 @@ def _read_package_header(variables):
     header['conflicts'] = variables.get('conflicts', [])
 
     return header
-
-class Package:
-    def __init__(self, name, parent_declarations, source):
-        parent_variables, parent_functions = parent_declarations
-        variables, functions = _get_declarations(source)
-        variables = {**parent_variables, **variables}
-        functions = {**parent_functions, **functions}
-
-        self.name = name
-        self.header = _read_package_header(variables)
-
-        if 'package' not in functions:
-            raise InvalidRecipeError('Missing required function package() \
-for package {self.name}')
-
-        self.action = functions['package']
-        self.install = {}
-
-        for rel, step in product(('pre', 'post'), ('remove', 'upgrade')):
-            self.install[rel + step] = functions.get(rel + step, '')
-
-    def id(self):
-        return '_'.join((self.name, self.header['pkgver'], self.header['arch']))
-
-    def filename(self):
-        return self.id() + '.ipk'
-
-    def control(self):
-        control = f'''Package: {self.name}
-Version: {self.header['pkgver']}
-Section: {self.header['section']}
-Architecture: {self.header['arch']}
-Description: {self.header['pkgdesc']}
-HomePage: {self.header['url']}
-License: {self.header['license']}
-'''
-
-        if self.header['depends']:
-            control += f"Depends: {', '.join(self.header['depends'])}\n"
-
-        if self.header['conflicts']:
-            control += f"Conflicts: {', '.join(self.header['conflicts'])}\n"
-
-        return control
