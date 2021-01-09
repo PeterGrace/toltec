@@ -39,8 +39,7 @@ class Repo:
                     os.path.join(recipes_dir, name, 'package'))
 
     def make_packages(self, remote: Optional[str], fetch_missing: bool):
-        # Fetch locally missing packages from the remote repository and build a
-        # list of packages that are missing from both
+        """Fetch missing packages and build new packages."""
         missing = {}
 
         for recipe in self.recipes.values():
@@ -95,7 +94,7 @@ class Repo:
                         self.repo_dir)
 
     def make_index(self):
-        # Generate packages index
+        """Generate index files for all the packages in the repo."""
         index_path = os.path.join(self.repo_dir, 'Packages')
         index_gzip_path = os.path.join(self.repo_dir, 'Packages.gz')
 
@@ -106,7 +105,9 @@ class Repo:
                         filename = package.filename()
                         local_path = os.path.join(self.repo_dir, filename)
 
-                        # Write index entry
+                        if not os.path.isfile(local_path):
+                            continue
+
                         control = package.control()
                         control += recipe.control()
                         control += f'''Filename: {filename}

@@ -52,9 +52,6 @@ repo-local:
 repo-new:
 	./scripts/repo-build --no-fetch $(REMOTE_REPO_ARG) package build/package build/repo
 
-repo-new:
-	./scripts/repo-build -n package build/package build/repo "$$remote_repo"
-
 repo-check:
 	./scripts/repo-check build/repo
 
