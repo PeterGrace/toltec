@@ -11,7 +11,7 @@ packages (in the latter case, it is called a split package).
 
 from . import bash, util
 from itertools import product
-from typing import Any
+from typing import Any, Dict, Tuple
 import logging
 import os
 import re
@@ -124,7 +124,7 @@ class Package:
     def __init__(
         self,
         name: str,
-        parent_declarations: tuple[bash.Variables, bash.Functions],
+        parent_declarations: Tuple[bash.Variables, bash.Functions],
         source: str
     ):
         """
@@ -185,7 +185,7 @@ License: {self.header['license']}
 
 
 def _check_field(
-    variables: dict[str, Any], name: str,
+    variables: Dict[str, Any], name: str,
     expected_type: type, required: bool
 ):
     """
@@ -204,7 +204,7 @@ def _check_field(
             raise InvalidRecipeError(f'Field {name} must be of type \
 {expected_type.__name__}, got {type(variables[name]).__name__}')
 
-def _read_recipe_header(variables: dict[str, Any]) -> dict[str, Any]:
+def _read_recipe_header(variables: Dict[str, Any]) -> Dict[str, Any]:
     """Read and check all recipe-wide fields."""
     header = {}
 
@@ -236,7 +236,7 @@ checksums, got {len(header['source'])} source(s) and \
 
     return header
 
-def _read_package_header(variables: dict[str, Any]) -> dict[str, Any]:
+def _read_package_header(variables: Dict[str, Any]) -> Dict[str, Any]:
     """Read and check all package-specific fields."""
     header = {}
 

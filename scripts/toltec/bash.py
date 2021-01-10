@@ -3,15 +3,15 @@
 
 """Bridge Bash declaration files with Python."""
 
-from typing import Union
+from typing import Dict, List, Optional, Tuple, Union
 import shlex
 import subprocess
 
-Any = Union[str, dict[str, str], list[str]]
-Variables = dict[str, Any]
-Functions = dict[str, str]
+Any = Union[str, Dict[str, str], List[Optional[str]]]
+Variables = Dict[str, Optional[Any]]
+Functions = Dict[str, str]
 
-def get_declarations(src: str) -> tuple[Variables, Functions]:
+def get_declarations(src: str) -> Tuple[Variables, Functions]:
     """
     Extract all variables and functions defined by a Bash script.
 
@@ -26,12 +26,12 @@ def get_declarations(src: str) -> tuple[Variables, Functions]:
 declare -f
 declare -p
 '''
-
+    env: Dict[str, str] = {}
     declarations_subshell = subprocess.run(
         ['/usr/bin/env', 'bash'],
         input=src.encode(),
         capture_output=True,
-        env={})
+        env=env)
 
     declarations = declarations_subshell.stdout.decode()
 
@@ -66,10 +66,10 @@ def _parse_string(token: str) -> str:
     """Remove escape sequences from a Bash string."""
     return token.replace('\\$', '$')
 
-def _parse_array(lexer: shlex.shlex) -> list[str]:
+def _parse_array(lexer: shlex.shlex) -> List[Optional[str]]:
     """Parse an indexed Bash array."""
     assert lexer.get_token() == '('
-    result = []
+    result: List[Optional[str]] = []
 
     while True:
         token = lexer.get_token()
@@ -92,7 +92,7 @@ def _parse_array(lexer: shlex.shlex) -> list[str]:
 
     return result
 
-def _parse_dict(lexer: shlex.shlex) -> dict[str, str]:
+def _parse_dict(lexer: shlex.shlex) -> Dict[str, str]:
     """Parse an associative Bash array."""
     assert lexer.get_token() == '('
     result = {}
@@ -114,7 +114,7 @@ def _parse_dict(lexer: shlex.shlex) -> dict[str, str]:
 
     return result
 
-def _parse_var(lexer: shlex.shlex) -> tuple[str, Any]:
+def _parse_var(lexer: shlex.shlex) -> Tuple[str, Optional[Any]]:
     """Parse a variable declaration."""
     flags_token = lexer.get_token()
 
@@ -124,6 +124,7 @@ def _parse_var(lexer: shlex.shlex) -> tuple[str, Any]:
         var_flags = set()
 
     var_name = lexer.get_token()
+    var_value: Optional[Any] = None
     lookahead = lexer.get_token()
 
     if lookahead == '=':
@@ -135,11 +136,10 @@ def _parse_var(lexer: shlex.shlex) -> tuple[str, Any]:
             var_value = _parse_string(lexer.get_token())
     else:
         lexer.push_token(lookahead)
-        var_value = None
 
     return var_name, var_value
 
-def _parse_func(lexer) -> tuple[int, int]:
+def _parse_func(lexer) -> Tuple[int, int]:
     """Find the starting and end bounds of a function declaration."""
     assert lexer.get_token() == '{'
     brace_depth = 1

@@ -5,10 +5,10 @@
 Build the package repository.
 """
 
-from .recipe import Recipe
+from .recipe import Recipe, Package
 from .util import file_sha256, http_date_format
 from datetime import datetime
-from typing import Optional
+from typing import Dict, List, Optional
 import gzip
 import logging
 import os
@@ -42,9 +42,9 @@ class Repo:
                 self.recipes[name] = Recipe.from_file(name,
                     os.path.join(recipes_dir, name))
 
-    def make_packages(self, remote: Optional[str], fetch_missing: bool):
+    def make_packages(self, remote: Optional[str], fetch_missing: bool) -> None:
         """Fetch missing packages and build new packages."""
-        missing = {}
+        missing: Dict[str, List[Package]] = {}
         logger.info('Building the local repository')
 
         for recipe in self.recipes.values():
@@ -65,6 +65,8 @@ class Repo:
                         req = requests.get(remote_path)
 
                         if req.status_code == 200:
+                            logger.info(f'Found {package.name} on remote repo')
+
                             with open(local_path, 'wb') as local:
                                 for chunk in req.iter_content(chunk_size=1024):
                                     local.write(chunk)
@@ -84,6 +86,7 @@ class Repo:
         # Build missing packages
         for recipe_name, packages in missing.items():
             if packages:
+                logger.info(f"Building missing package(s): {', '.join(packages)}")
                 subprocess.run([
                     'scripts/package-build',
                     os.path.join(self.recipes_dir, recipe_name),
@@ -101,6 +104,7 @@ class Repo:
 
     def make_index(self):
         """Generate index files for all the packages in the repo."""
+        logger.info('Generating package index')
         index_path = os.path.join(self.repo_dir, 'Packages')
         index_gzip_path = os.path.join(self.repo_dir, 'Packages.gz')
 
