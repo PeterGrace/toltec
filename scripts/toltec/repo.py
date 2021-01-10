@@ -10,10 +10,14 @@ from .util import file_sha256, http_date_format
 from datetime import datetime
 from typing import Optional
 import gzip
+import logging
 import os
 import requests
 import shutil
 import subprocess
+
+logger = logging.getLogger(__name__)
+
 
 class Repo:
     def __init__(self, recipes_dir: str, work_dir: str, repo_dir: str):
@@ -36,14 +40,16 @@ class Repo:
         for name in os.listdir(recipes_dir):
             if name[0] != '.':
                 self.recipes[name] = Recipe.from_file(name,
-                    os.path.join(recipes_dir, name, 'package'))
+                    os.path.join(recipes_dir, name))
 
     def make_packages(self, remote: Optional[str], fetch_missing: bool):
         """Fetch missing packages and build new packages."""
         missing = {}
+        logger.info('Building the local repository')
 
         for recipe in self.recipes.values():
             missing[recipe.name] = []
+            logger.info(f'Processing recipe {recipe.name}')
 
             for package in recipe.packages.values():
                 filename = package.filename()

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import argparse
+import logging
 from toltec.repo import Repo
 
 parser = argparse.ArgumentParser(
@@ -40,6 +41,8 @@ group.add_argument(
 
 args = parser.parse_args()
 remote = args.remote_repo if not args.local else None
+
+logging.basicConfig(level=logging.INFO)
 
 repo = Repo(args.recipes_dir, args.work_dir, args.repo_dir)
 repo.make_packages(remote, fetch_missing=not args.no_fetch)

@@ -9,21 +9,34 @@ which contains the instructions necessary to build one or more related
 packages (in the latter case, it is called a split package).
 """
 
-from . import bash
+from . import bash, util
 from itertools import product
 from typing import Any
+import logging
+import os
+import re
+import requests
+import shutil
+
+logger = logging.getLogger(__name__)
+url_regex = re.compile(r'[a-z]+://')
 
 
 class InvalidRecipeError(Exception):
     pass
 
 
+class BuildError(Exception):
+    pass
+
+
 class Recipe:
-    def __init__(self, name: str, source: str):
+    def __init__(self, name: str, root: str, source: str):
         """
         Load a recipe from a Bash source.
 
         :param name: name of the recipe
+        :param root: directory where the recipe is stored
         :param source: source string of the recipe
         :raises InvalidRecipeError: if the recipe contains an error
         """
@@ -31,6 +44,7 @@ class Recipe:
         variables, functions = declarations
 
         self.name = name
+        self.root = root
         self.header = _read_recipe_header(variables)
         self.packages = {}
 
@@ -60,15 +74,51 @@ which has a build() step')
         self.actions['prepare'] = functions.get('prepare', '')
 
     @classmethod
-    def from_file(cls, name: str, path: str) -> 'Recipe':
+    def from_file(cls, name: str, root: str) -> 'Recipe':
         """Load a recipe from a file."""
-        with open(path, 'r') as recipe:
-            return Recipe(name, recipe.read())
+        with open(os.path.join(root, 'package'), 'r') as recipe:
+            return Recipe(name, root, recipe.read())
 
     def control(self) -> str:
         """Get the recipe-wide control fields."""
         return f"Maintainer: {self.header['maintainer']}\n"
 
+    def fetch_sources(self, src_dir: str):
+        os.makedirs(src_dir)
+
+        sources = self.header['source']
+        checksums = self.header['sha256sums']
+        noextract = self.header['noextract']
+
+        for i in range(len(sources)):
+            source = sources[i]
+            checksum = checksums[i]
+
+            filename = os.path.basename(source)
+            local_path = os.path.join(src_dir, filename)
+
+            if url_regex.match(source) is None:
+                # Get source file from the recipe’s root
+                shutil.copy2(os.path.join(self.root, source), local_path)
+            else:
+                # Fetch source file from the network
+                req = requests.get(source)
+
+                if req.status_code != 200:
+                    raise BuildError(f"Unexpected status code while fetching \
+source file '{source}', got {req.status_code}")
+
+                with open(local_path, 'wb') as local:
+                    for chunk in req.iter_content(chunk_size=1024):
+                        local.write(chunk)
+
+            # Verify checksum
+            if checksum != 'SKIP' and util.file_sha256(local_path) != checksum:
+                raise BuildError(f"Invalid checksum for source file {source}")
+
+            # Automatically extract source archives
+            if filename not in noextract:
+                util.auto_extract(local_path, src_dir)
 
 class Package:
     def __init__(
@@ -174,10 +224,15 @@ def _read_recipe_header(variables: dict[str, Any]) -> dict[str, Any]:
     header['source'] = variables.get('source', [])
 
     _check_field(variables, 'noextract', list, False)
-    header['noextract'] = variables.get('noextract', [])
+    header['noextract'] = set(variables.get('noextract', []))
 
     _check_field(variables, 'sha256sums', list, False)
     header['sha256sums'] = variables.get('sha256sums', [])
+
+    if len(header['source']) != len(header['sha256sums']):
+        raise InvalidRecipeError(f"Expected the same number of sources and \
+checksums, got {len(header['source'])} source(s) and \
+{len(header['sha256sums'])} checksum(s)")
 
     return header
 
