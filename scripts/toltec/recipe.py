@@ -9,14 +9,14 @@ which contains the instructions necessary to build one or more related
 packages (in the latter case, it is called a split package).
 """
 
-from . import bash, util
 from itertools import product
 from typing import Any, Dict, Tuple
 import logging
 import os
 import re
-import requests
 import shutil
+import requests
+from . import bash, util
 
 logger = logging.getLogger(__name__)
 url_regex = re.compile(r'[a-z]+://')
@@ -49,16 +49,16 @@ class Recipe:
         self.packages = {}
 
         if len(self.header['pkgnames']) == 1:
-            name = self.header['pkgnames'][0]
-            self.packages[name] = Package(name, declarations, source)
+            pkg_name = self.header['pkgnames'][0]
+            self.packages[pkg_name] = Package(name, declarations, source)
         else:
-            for name in self.header['pkgnames']:
-                if name not in functions:
+            for pkg_name in self.header['pkgnames']:
+                if pkg_name not in functions:
                     raise InvalidRecipeError('Missing required function \
-{name}() for corresponding package')
+{pkg_name}() for corresponding package')
 
-                self.packages[name] = Package(name, declarations,
-                        functions[name])
+                self.packages[pkg_name] = Package(pkg_name, declarations,
+                        functions[pkg_name])
 
         self.actions = {}
 

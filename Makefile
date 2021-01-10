@@ -44,13 +44,13 @@ help:
 	@echo "$$USAGE"
 
 repo:
-	./scripts/repo-build $(REMOTE_REPO_ARG) package build/package build/repo
+	./scripts/repo_build.py $(REMOTE_REPO_ARG) package build/package build/repo
 
 repo-local:
-	./scripts/repo-build --local package build/package build/repo
+	./scripts/repo_build.py --local package build/package build/repo
 
 repo-new:
-	./scripts/repo-build --no-fetch $(REMOTE_REPO_ARG) package build/package build/repo
+	./scripts/repo_build.py --no-fetch $(REMOTE_REPO_ARG) package build/package build/repo
 
 repo-check:
 	./scripts/repo-check build/repo
@@ -73,6 +73,10 @@ format-fix:
 lint:
 	@echo "==> Linting shell scripts"
 	shellcheck $$(shfmt -f .)
+	@echo "==> Typechecking Python scripts"
+	MYPYPATH=scripts mypy scripts
+	@echo "==> Linting Python scripts"
+	pylint scripts
 	@echo "==> Verifying that the bootstrap checksum is correct"
 	./scripts/bootstrap/checksum-check
 

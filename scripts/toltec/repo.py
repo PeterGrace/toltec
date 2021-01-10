@@ -5,16 +5,16 @@
 Build the package repository.
 """
 
-from .recipe import Recipe, Package
-from .util import file_sha256, http_date_format
 from datetime import datetime
-from typing import Dict, List, Optional
 import gzip
 import logging
 import os
-import requests
 import shutil
 import subprocess
+from typing import Dict, List, Optional
+import requests
+from .recipe import Recipe, Package
+from .util import file_sha256, http_date_format
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class Repo:
     def make_packages(self, remote: Optional[str], fetch_missing: bool) -> None:
         """Fetch missing packages and build new packages."""
         missing: Dict[str, List[Package]] = {}
-        logger.info('Building the local repository')
+        logger.info('Building a local repository')
 
         for recipe in self.recipes.values():
             missing[recipe.name] = []
@@ -86,7 +86,7 @@ class Repo:
         # Build missing packages
         for recipe_name, packages in missing.items():
             if packages:
-                logger.info(f"Building missing package(s): {', '.join(packages)}")
+                logger.info(f"Building missing package(s): {packages}")
                 subprocess.run([
                     'scripts/package-build',
                     os.path.join(self.recipes_dir, recipe_name),
