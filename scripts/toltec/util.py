@@ -79,17 +79,15 @@ def auto_extract(archive_path: str, dest_path: str) -> bool:
         with zipfile.ZipFile(archive_path) as archive:
             members = remove_prefix(archive.namelist())
 
-            for member, stripped in members.items():
+            for filename, stripped in members.items():
+                member = archive.getinfo(filename)
                 file_path = os.path.join(dest_path, stripped)
-                parent_dir, base = os.path.split(file_path)
 
-                os.makedirs(parent_dir, exist_ok=True)
-
-                if base:
-                    source = archive.open(member)
-                    target = open(file_path, 'wb')
-
-                    with source, target:
+                if member.is_dir():
+                    os.makedirs(file_path, exist_ok=True)
+                else:
+                    with archive.open(member) as source, \
+                            open(file_path, 'wb') as target:
                         shutil.copyfileobj(source, target)
 
         return True
