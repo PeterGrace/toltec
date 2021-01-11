@@ -69,11 +69,11 @@ and checksums, got {len(self.source)} source(s) and \
         # Parse recipe build hooks
         self.actions = {}
 
-        if self.image is not None and 'build' not in functions:
+        if self.image and 'build' not in functions:
             raise InvalidRecipeError('Missing build() function for a recipe \
 which declares a build image')
 
-        if self.image is None and 'build' in functions:
+        if not self.image and 'build' in functions:
             raise InvalidRecipeError('Missing image declaration for a recipe \
 which has a build() step')
 
