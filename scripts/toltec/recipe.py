@@ -16,7 +16,8 @@ import os
 import re
 import shutil
 import subprocess
-from typing import Optional
+from docker.client import DockerClient
+from docker.types import Mount
 import requests
 from . import bash, util
 
@@ -103,7 +104,7 @@ which has a build() step')
         """Get the recipe-wide control fields."""
         return f"Maintainer: {self.maintainer}\n"
 
-    def fetch_sources(self, src_dir: str) -> None:
+    def fetch_source(self, src_dir: str) -> None:
         """
         Fetch all source files required to build this recipe and automatically
         extract source archives.
@@ -157,14 +158,76 @@ source file '{source}', got {req.status_code}")
             logger.info('Skipping source preparation (nothing to do)')
             return
 
-        logger.info('Preparing source files')
+        logger.info(f'({self.name}) Preparing source files')
         subprocess.run('\n'.join((
             bash.put_variables({
                 **self._bash_variables,
-                'srcdir': src_dir
+                'srcdir': src_dir,
             }),
             self.actions['prepare']
         )), shell=True, check=True)
+
+    def build(self, src_dir: str, docker: DockerClient) -> None:
+        """
+        Build source files.
+
+        :param src_dir: directory into which source files are stored
+        :param docker: docker client to use for running the build
+        """
+        logger.info(f'({self.name}) Building binaries')
+        uid = os.getuid()
+        container = docker.containers.run(
+            f'ghcr.io/toltec-dev/{self.image}',
+            mounts=[Mount(
+                type='bind',
+                source=os.path.abspath(src_dir),
+                target='/src'
+            )],
+            command=[
+                'bash', '-c',
+                '\n'.join((
+                    bash.put_variables({
+                        **self._bash_variables,
+                        'srcdir': '/src',
+                    }),
+                    'cd "$srcdir"',
+                    self.actions['build'],
+                    f'chown -R {uid}:{uid} "$srcdir"',
+                ))
+            ],
+            detach=True,
+            remove=True)
+
+        for line in container.logs(stream=True):
+            logger.debug(f'({self.name} build) {line.decode().strip()}')
+
+    def strip(self, src_dir: str, docker: DockerClient) -> None:
+        """
+        Strip all debugging symbols from binaries.
+
+        :param src_dir: directory into which source files were compiled
+        :param docker: docker client to use for stripping
+        """
+        logger.info('f({self.name}) Stripping binaries')
+
+        # Strip binaries in the target and host architectures
+        docker.containers.run(
+            f'ghcr.io/toltec-dev/{self.image}',
+            mounts=[Mount(
+                type='bind',
+                source=os.path.abspath(src_dir),
+                target='/src'
+            )],
+            command=[
+                'bash', '-c',
+                '\n'.join((
+                    f'find "{src_dir}" -print0 -type f \
+| xargs --null "${{CROSS_COMPILE}}strip" --strip-all || true',
+                    f'find "{src_dir}" -print0 -type f \
+| xargs --null strip --strip-all || true',
+                ))
+            ],
+            remove=True)
 
 
 class Package:
