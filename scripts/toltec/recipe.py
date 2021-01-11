@@ -10,11 +10,13 @@ packages (in the latter case, it is called a split package).
 """
 
 from itertools import product
-from typing import Any, Dict, Tuple
+from typing import Tuple, Optional
 import logging
 import os
 import re
 import shutil
+import subprocess
+from typing import Optional
 import requests
 from . import bash, util
 
@@ -45,14 +47,44 @@ class Recipe:
 
         self.name = name
         self.root = root
-        self.header = _read_recipe_header(variables)
+        self._bash_variables = variables
+
+        # Parse and check recipe metadata
+        self.pkgnames = _check_field_indexed(variables, 'pkgnames')
+        self.timestamp = _check_field_string(variables, 'timestamp')
+        self.maintainer = _check_field_string(variables, 'maintainer')
+        self.image = _check_field_string(variables, 'image', '')
+        self.source = _check_field_indexed(variables, 'source', [])
+        self.noextract = _check_field_indexed(variables, 'noextract', [])
+        self.sha256sums = _check_field_indexed(variables, 'sha256sums', [])
+
+        if len(self.source) != len(self.sha256sums):
+            raise InvalidRecipeError(f"Expected the same number of sources \
+and checksums, got {len(self.source)} source(s) and \
+{len(self.sha256sums)} checksum(s)")
+
+        # Parse recipe build hooks
+        self.actions = {}
+
+        if self.image is not None and 'build' not in functions:
+            raise InvalidRecipeError('Missing build() function for a recipe \
+which declares a build image')
+
+        if self.image is None and 'build' in functions:
+            raise InvalidRecipeError('Missing image declaration for a recipe \
+which has a build() step')
+
+        self.actions['prepare'] = functions.get('prepare', '')
+        self.actions['build'] = functions.get('build', '')
+
+        # Parse packages contained in the recipe
         self.packages = {}
 
-        if len(self.header['pkgnames']) == 1:
-            pkg_name = self.header['pkgnames'][0]
+        if len(self.pkgnames) == 1:
+            pkg_name = self.pkgnames[0]
             self.packages[pkg_name] = Package(name, declarations, source)
         else:
-            for pkg_name in self.header['pkgnames']:
+            for pkg_name in self.pkgnames:
                 if pkg_name not in functions:
                     raise InvalidRecipeError('Missing required function \
 {pkg_name}() for corresponding package')
@@ -60,18 +92,6 @@ class Recipe:
                 self.packages[pkg_name] = Package(pkg_name, declarations,
                         functions[pkg_name])
 
-        self.actions = {}
-
-        if self.header['image'] is not None and 'build' not in functions:
-            raise InvalidRecipeError('Missing build() function for a recipe \
-which declares a build image')
-
-        if self.header['image'] is None and 'build' in functions:
-            raise InvalidRecipeError('Missing image declaration for a recipe \
-which has a build() step')
-
-        self.actions['build'] = functions.get('build', '')
-        self.actions['prepare'] = functions.get('prepare', '')
 
     @classmethod
     def from_file(cls, name: str, root: str) -> 'Recipe':
@@ -79,20 +99,27 @@ which has a build() step')
         with open(os.path.join(root, 'package'), 'r') as recipe:
             return Recipe(name, root, recipe.read())
 
-    def control(self) -> str:
+    def control_fields(self) -> str:
         """Get the recipe-wide control fields."""
-        return f"Maintainer: {self.header['maintainer']}\n"
+        return f"Maintainer: {self.maintainer}\n"
 
-    def fetch_sources(self, src_dir: str):
+    def fetch_sources(self, src_dir: str) -> None:
+        """
+        Fetch all source files required to build this recipe and automatically
+        extract source archives.
+
+        :param src_dir: directory into which source files are fetched
+        """
+        logger.info('Fetching source files')
         os.makedirs(src_dir)
 
-        sources = self.header['source']
-        checksums = self.header['sha256sums']
-        noextract = self.header['noextract']
+        sources = self.source
+        checksums = self.sha256sums
+        noextract = self.noextract
 
         for i in range(len(sources)):
-            source = sources[i]
-            checksum = checksums[i]
+            source = sources[i] or ''
+            checksum = checksums[i] or ''
 
             filename = os.path.basename(source)
             local_path = os.path.join(src_dir, filename)
@@ -120,6 +147,26 @@ source file '{source}', got {req.status_code}")
             if filename not in noextract:
                 util.auto_extract(local_path, src_dir)
 
+    def prepare(self, src_dir: str) -> None:
+        """
+        Prepare source files before building.
+
+        :param src_dir: directory into which source files are stored
+        """
+        if not self.actions['prepare']:
+            logger.info('Skipping source preparation (nothing to do)')
+            return
+
+        logger.info('Preparing source files')
+        subprocess.run('\n'.join((
+            bash.put_variables({
+                **self._bash_variables,
+                'srcdir': src_dir
+            }),
+            self.actions['prepare']
+        )), shell=True, check=True)
+
+
 class Package:
     def __init__(
         self,
@@ -144,7 +191,17 @@ class Package:
         functions = {**parent_functions, **functions}
 
         self.name = name
-        self.header = _read_package_header(variables)
+        self._bash_variables = variables
+
+        # Parse and check package metadata
+        self.pkgver = _check_field_string(variables, 'pkgver')
+        self.arch = _check_field_string(variables, 'arch', 'armv7-3.2')
+        self.pkgdesc = _check_field_string(variables, 'pkgdesc')
+        self.url = _check_field_string(variables, 'url')
+        self.section = _check_field_string(variables, 'section')
+        self.license = _check_field_string(variables, 'license')
+        self.depends = _check_field_indexed(variables, 'depends', [])
+        self.conflicts = _check_field_indexed(variables, 'conflicts', [])
 
         if 'package' not in functions:
             raise InvalidRecipeError('Missing required function package() \
@@ -158,110 +215,67 @@ for package {self.name}')
 
     def id(self) -> str:
         """Get the unique identifier of this package."""
-        return '_'.join((self.name, self.header['pkgver'], self.header['arch']))
+        return '_'.join((self.name, self.pkgver, self.arch))
 
     def filename(self) -> str:
         """Get the name of the archive corresponding to this package."""
         return self.id() + '.ipk'
 
-    def control(self):
+    def control_fields(self) -> str:
         """Get the package-specific control fields."""
         control = f'''Package: {self.name}
-Version: {self.header['pkgver']}
-Section: {self.header['section']}
-Architecture: {self.header['arch']}
-Description: {self.header['pkgdesc']}
-HomePage: {self.header['url']}
-License: {self.header['license']}
+Version: {self.pkgver}
+Section: {self.section}
+Architecture: {self.arch}
+Description: {self.pkgdesc}
+HomePage: {self.url}
+License: {self.license}
 '''
 
-        if self.header['depends']:
-            control += f"Depends: {', '.join(self.header['depends'])}\n"
+        if self.depends:
+            control += f"Depends: \
+                {', '.join(item for item in self.depends if item)}\n"
 
-        if self.header['conflicts']:
-            control += f"Conflicts: {', '.join(self.header['conflicts'])}\n"
+        if self.conflicts:
+            control += f"Conflicts: \
+                {', '.join(item for item in self.conflicts if item)}\n"
 
         return control
 
 
-def _check_field(
-    variables: Dict[str, Any], name: str,
-    expected_type: type, required: bool
-):
-    """
-    Check that a field is properly defined in a recipe.
+# Helpers to check that fields of the right type are defined in a recipe
+# and to otherwise return a default value
+def _check_field_string(
+    variables: bash.Variables, name: str,
+    default: Optional[str] = None
+) -> str:
+    if name not in variables:
+        if default is None:
+            raise InvalidRecipeError(f'Missing required field {name}')
+        return default
 
-    :param variables: set of variables declared in the recipe
-    :param name: name of the field to check
-    :param expected_type: if the field is defined, its expected type
-    :param required: if true, requires that the field be defined
-    """
-    if required and name not in variables:
-        raise InvalidRecipeError(f'Missing required field {name}')
+    value = variables[name]
 
-    if name in variables:
-        if type(variables[name]) != expected_type:
-            raise InvalidRecipeError(f'Field {name} must be of type \
-{expected_type.__name__}, got {type(variables[name]).__name__}')
+    if not isinstance(value, str):
+        raise InvalidRecipeError(f"Field {name} must be a string, \
+got {type(variables[name]).__name__}")
 
-def _read_recipe_header(variables: Dict[str, Any]) -> Dict[str, Any]:
-    """Read and check all recipe-wide fields."""
-    header = {}
+    return value
 
-    _check_field(variables, 'pkgnames', list, True)
-    header['pkgnames'] = variables['pkgnames']
 
-    _check_field(variables, 'timestamp', str, True)
-    header['timestamp'] = variables['timestamp']
+def _check_field_indexed(
+    variables: bash.Variables, name: str,
+    default: Optional[bash.IndexedArray] = None
+) -> bash.IndexedArray:
+    if name not in variables:
+        if default is None:
+            raise InvalidRecipeError(f'Missing required field {name}')
+        return default
 
-    _check_field(variables, 'maintainer', str, True)
-    header['maintainer'] = variables['maintainer']
+    value = variables[name]
 
-    _check_field(variables, 'image', str, False)
-    header['image'] = variables.get('image')
+    if not isinstance(value, list):
+        raise InvalidRecipeError(f"Field {name} must be an indexed array, \
+got {type(variables[name]).__name__}")
 
-    _check_field(variables, 'source', list, False)
-    header['source'] = variables.get('source', [])
-
-    _check_field(variables, 'noextract', list, False)
-    header['noextract'] = set(variables.get('noextract', []))
-
-    _check_field(variables, 'sha256sums', list, False)
-    header['sha256sums'] = variables.get('sha256sums', [])
-
-    if len(header['source']) != len(header['sha256sums']):
-        raise InvalidRecipeError(f"Expected the same number of sources and \
-checksums, got {len(header['source'])} source(s) and \
-{len(header['sha256sums'])} checksum(s)")
-
-    return header
-
-def _read_package_header(variables: Dict[str, Any]) -> Dict[str, Any]:
-    """Read and check all package-specific fields."""
-    header = {}
-
-    _check_field(variables, 'pkgver', str, True)
-    header['pkgver'] = variables['pkgver']
-
-    _check_field(variables, 'arch', str, False)
-    header['arch'] = variables.get('arch', 'armv7-3.2')
-
-    _check_field(variables, 'pkgdesc', str, True)
-    header['pkgdesc'] = variables['pkgdesc']
-
-    _check_field(variables, 'url', str, True)
-    header['url'] = variables['url']
-
-    _check_field(variables, 'section', str, True)
-    header['section'] = variables['section']
-
-    _check_field(variables, 'license', str, True)
-    header['license'] = variables['license']
-
-    _check_field(variables, 'depends', list, False)
-    header['depends'] = variables.get('depends', [])
-
-    _check_field(variables, 'conflicts', list, False)
-    header['conflicts'] = variables.get('conflicts', [])
-
-    return header
+    return value

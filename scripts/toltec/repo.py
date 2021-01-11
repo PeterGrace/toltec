@@ -102,7 +102,7 @@ class Repo:
                             package.name, filename),
                         self.repo_dir)
 
-    def make_index(self):
+    def make_index(self) -> None:
         """Generate index files for all the packages in the repo."""
         logger.info('Generating package index')
         index_path = os.path.join(self.repo_dir, 'Packages')
@@ -118,8 +118,8 @@ class Repo:
                         if not os.path.isfile(local_path):
                             continue
 
-                        control = package.control()
-                        control += recipe.control()
+                        control = package.control_fields()
+                        control += recipe.control_fields()
                         control += f'''Filename: {filename}
 SHA256sum: {file_sha256(local_path)}
 Size: {os.path.getsize(local_path)}
