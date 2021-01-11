@@ -23,6 +23,8 @@ from . import bash, util
 
 logger = logging.getLogger(__name__)
 url_regex = re.compile(r'[a-z]+://')
+image_prefix = 'ghcr.io/toltec-dev/'
+default_image = 'base:v1.2.2'
 
 
 class InvalidRecipeError(Exception):
@@ -111,7 +113,7 @@ which has a build() step')
 
         :param src_dir: directory into which source files are fetched
         """
-        logger.info('Fetching source files')
+        logger.info(f'[{self.name}] Fetching source files')
         os.makedirs(src_dir)
 
         sources = self.source
@@ -155,10 +157,10 @@ source file '{source}', got {req.status_code}")
         :param src_dir: directory into which source files are stored
         """
         if not self.actions['prepare']:
-            logger.info('Skipping source preparation (nothing to do)')
+            logger.info(f'[{self.name}] Skipping prepare (nothing to do)')
             return
 
-        logger.info(f'({self.name}) Preparing source files')
+        logger.info(f'[{self.name}] Preparing source files')
         subprocess.run('\n'.join((
             bash.put_variables({
                 **self._bash_variables,
@@ -174,32 +176,38 @@ source file '{source}', got {req.status_code}")
         :param src_dir: directory into which source files are stored
         :param docker: docker client to use for running the build
         """
-        logger.info(f'({self.name}) Building binaries')
+        if not self.actions['build']:
+            logger.info(f'[{self.name}] Skipping build (nothing to do)')
+            return
+
+        logger.info(f'[{self.name}] Building binaries')
+        mount_src = '/src'
         uid = os.getuid()
+
         container = docker.containers.run(
-            f'ghcr.io/toltec-dev/{self.image}',
+            image_prefix + self.image,
             mounts=[Mount(
                 type='bind',
                 source=os.path.abspath(src_dir),
-                target='/src'
+                target=mount_src,
             )],
             command=[
                 'bash', '-c',
                 '\n'.join((
                     bash.put_variables({
                         **self._bash_variables,
-                        'srcdir': '/src',
+                        'srcdir': mount_src,
                     }),
-                    'cd "$srcdir"',
+                    'cd "{mount_src}"',
                     self.actions['build'],
-                    f'chown -R {uid}:{uid} "$srcdir"',
+                    f'chown -R {uid}:{uid} "{mount_src}"',
                 ))
             ],
             detach=True,
             remove=True)
 
         for line in container.logs(stream=True):
-            logger.debug(f'({self.name} build) {line.decode().strip()}')
+            logger.debug(f'[{self.name} build] {line.decode().strip()}')
 
     def strip(self, src_dir: str, docker: DockerClient) -> None:
         """
@@ -208,22 +216,24 @@ source file '{source}', got {req.status_code}")
         :param src_dir: directory into which source files were compiled
         :param docker: docker client to use for stripping
         """
-        logger.info('f({self.name}) Stripping binaries')
+        logger.info(f'[{self.name}] Stripping binaries')
+        mount_src = '/src'
 
-        # Strip binaries in the target and host architectures
         docker.containers.run(
-            f'ghcr.io/toltec-dev/{self.image}',
+            image_prefix + default_image,
             mounts=[Mount(
                 type='bind',
                 source=os.path.abspath(src_dir),
-                target='/src'
+                target=mount_src
             )],
             command=[
                 'bash', '-c',
                 '\n'.join((
-                    f'find "{src_dir}" -print0 -type f \
+                    # strip binaries in the target arch
+                    f'find "{mount_src}" -print0 -type f \
 | xargs --null "${{CROSS_COMPILE}}strip" --strip-all || true',
-                    f'find "{src_dir}" -print0 -type f \
+                    # strip binaries in the host arch
+                    f'find "{mount_src}" -print0 -type f \
 | xargs --null strip --strip-all || true',
                 ))
             ],
