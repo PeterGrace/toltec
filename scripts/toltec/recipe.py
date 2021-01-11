@@ -198,7 +198,7 @@ source file '{source}', got {req.status_code}")
                         **self._bash_variables,
                         'srcdir': mount_src,
                     }),
-                    'cd "{mount_src}"',
+                    f'cd "{mount_src}"',
                     self.actions['build'],
                     f'chown -R {uid}:{uid} "{mount_src}"',
                 ))
