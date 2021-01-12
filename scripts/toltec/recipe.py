@@ -167,13 +167,13 @@ source file '{source}', got {req.status_code}")
             return
 
         self.logger.info('Preparing source files')
-        subprocess.run('\n'.join((
-            bash.put_variables({
-                **self._bash_variables,
-                'srcdir': src_dir,
-            }),
-            self.actions['prepare']
-        )), shell=True, check=True)
+
+        logs = bash.run_script(
+            variables={**self._bash_variables, 'srcdir': src_dir},
+            script=self.actions['prepare'])
+
+        for line in logs:
+            self.logger.debug(line.decode().strip())
 
     def build(self, src_dir: str, docker: DockerClient) -> None:
         """
@@ -190,29 +190,20 @@ source file '{source}', got {req.status_code}")
         mount_src = '/src'
         uid = os.getuid()
 
-        container = docker.containers.run(
-            image_prefix + self.image,
+        logs = bash.run_script_in_container(
+            docker, image=image_prefix + self.image,
             mounts=[Mount(
                 type='bind',
                 source=os.path.abspath(src_dir),
-                target=mount_src,
-            )],
-            command=[
-                'bash', '-c',
-                '\n'.join((
-                    bash.put_variables({
-                        **self._bash_variables,
-                        'srcdir': mount_src,
-                    }),
-                    f'cd "{mount_src}"',
-                    self.actions['build'],
-                    f'chown -R {uid}:{uid} "{mount_src}"',
-                ))
-            ],
-            detach=True,
-            remove=True)
+                target=mount_src)],
+            variables={**self._bash_variables, 'srcdir': mount_src},
+            script='\n'.join((
+                f'cd "{mount_src}"',
+                self.actions['build'],
+                f'chown -R {uid}:{uid} "{mount_src}"',
+            )))
 
-        for line in container.logs(stream=True):
+        for line in logs:
             self.logger.debug(line.decode().strip())
 
     def strip(self, src_dir: str, docker: DockerClient) -> None:
@@ -225,28 +216,23 @@ source file '{source}', got {req.status_code}")
         self.logger.info('Stripping binaries')
         mount_src = '/src'
 
-        container = docker.containers.run(
-            image_prefix + default_image,
+        logs = bash.run_script_in_container(
+            docker, image=image_prefix + default_image,
             mounts=[Mount(
                 type='bind',
                 source=os.path.abspath(src_dir),
-                target=mount_src
-            )],
-            command=[
-                'bash', '-c',
-                '\n'.join((
-                    # strip binaries in the target arch
-                    f'find "{mount_src}" -print0 -type f \
+                target=mount_src)],
+            variables={},
+            script='\n'.join((
+                # Strip binaries in the target arch
+                f'find "{mount_src}" -type f -executable -print0 \
 | xargs --null "${{CROSS_COMPILE}}strip" --strip-all || true',
-                    # strip binaries in the host arch
-                    f'find "{mount_src}" -print0 -type f \
+                # Strip binaries in the host arch
+                f'find "{mount_src}" -type f -executable -print0 \
 | xargs --null strip --strip-all || true',
-                ))
-            ],
-            detach=True,
-            remove=True)
+            )))
 
-        for line in container.logs(stream=True):
+        for line in logs:
             self.logger.debug(line.decode().strip())
 
 

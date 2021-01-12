@@ -4,6 +4,7 @@
 """Bridge Bash with Python."""
 
 from typing import Dict, List, Optional, Tuple, Union
+from docker.client import DockerClient
 import shlex
 import subprocess
 
@@ -12,6 +13,12 @@ IndexedArray = List[Optional[str]]
 Any = Union[str, AssociativeArray, IndexedArray]
 Variables = Dict[str, Optional[Any]]
 Functions = Dict[str, str]
+
+
+class ScriptError(Exception):
+    """Raised when a launched Bash script exits with a non-zero code."""
+    pass
+
 
 # Variables which are defined by default by Bash.  Those variables are excluded
 # from the result of `get_declarations()`. Subset of the list at:
@@ -49,6 +56,14 @@ declare -p
         input=src.encode(),
         capture_output=True,
         env=env)
+
+    if declarations_subshell.returncode == 2:
+        raise ScriptError(f'Bash syntax error\n\
+{declarations_subshell.stderr.decode()}')
+
+    if declarations_subshell.returncode != 0:
+        raise ScriptError(f'Bash error\n\
+{declarations_subshell.stderr.decode()}')
 
     declarations = declarations_subshell.stdout.decode()
 
@@ -217,3 +232,36 @@ def _parse_func(lexer) -> Tuple[int, int]:
 
     end_byte = lexer.instream.tell() - 1
     return start_byte, end_byte
+
+def run_script(variables: Variables, script: str):
+    process = subprocess.Popen(
+        ['/usr/bin/env', 'bash'],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT)
+
+    process.stdin.write((put_variables(variables) + '\n' + script).encode())
+    process.stdin.close()
+
+    while process.poll() is None:
+        line = process.stdout.readline()
+        if line: yield line
+
+    if process.returncode != 0:
+        raise ScriptError(f'Script exited with code {process.returncode}')
+
+def run_script_in_container(
+        docker: DockerClient, image: str,
+        mounts: List, variables: Variables, script: str):
+    container = docker.containers.run(
+        image,
+        mounts=mounts,
+        command=[
+            '/usr/bin/env', 'bash', '-c',
+            put_variables(variables) + '\n' + script,
+        ],
+        detach=True,
+        remove=True)
+
+    for line in container.logs(stream=True):
+        if line: yield line
