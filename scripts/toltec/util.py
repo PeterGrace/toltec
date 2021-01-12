@@ -1,20 +1,22 @@
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
 
+"""Collection of useful functions."""
+
 from collections.abc import Iterable
 import hashlib
 import itertools
 import os
 import shutil
 import sys
-from typing import Dict, List, Set
+from typing import Dict, List, Optional
 import zipfile
 
 # Date format used in HTTP headers such as Last-Modified
-http_date_format = "%a, %d %b %Y %H:%M:%S %Z"
+HTTP_DATE_FORMAT = "%a, %d %b %Y %H:%M:%S %Z"
 
 # Logging format for build scripts
-logging_format = '[%(levelname)8s] %(name)s: %(message)s'
+LOGGING_FORMAT = '[%(levelname)8s] %(name)s: %(message)s'
 
 def file_sha256(path: str) -> str:
     """Compute the SHA-256 checksum of a file."""
@@ -35,14 +37,15 @@ def split_all(path: str) -> List[str]:
 
     while prefix not in ('', '/'):
         prefix, base = os.path.split(prefix)
-        if base: parts.append(base)
+        if base:
+            parts.append(base)
 
     parts.reverse()
     return parts
 
-def all_equal(it: Iterable) -> bool:
+def all_equal(seq: Iterable) -> bool:
     """Check that all elements of a sequence are equal."""
-    grouped = itertools.groupby(it)
+    grouped = itertools.groupby(seq)
     first = next(grouped, (None, grouped))
     second = next(grouped, None)
     return first and not second
@@ -65,9 +68,9 @@ def remove_prefix(filenames: List[str]) -> Dict[str, str]:
 
     mapping = {}
 
-    for i in range(len(filenames)):
-        if split_filenames[i][prefix:]:
-            mapping[filenames[i]] = os.path.join(*split_filenames[i][prefix:])
+    for filename, split_filename in zip(filenames, split_filenames):
+        if split_filename[prefix:]:
+            mapping[filename] = os.path.join(*split_filename[prefix:])
 
     return mapping
 
@@ -101,8 +104,8 @@ def auto_extract(archive_path: str, dest_path: str) -> bool:
 def query_user(
         question: str,
         default: str,
-        options: List[str] = ['y', 'n'],
-        aliases: Dict[str, str] = {'yes': 'y', 'no': 'n'}):
+        options: Optional[List[str]] = None,
+        aliases: Optional[Dict[str, str]] = None):
     """
     Ask the user to make a choice.
 
@@ -112,6 +115,9 @@ def query_user(
     :param aliases: accepted aliases for the valid options
     :returns: option chosen by the user
     """
+    options = options or ['y', 'n']
+    aliases = aliases or {'yes': 'y', 'no': 'n'}
+
     if default not in options:
         raise ValueError(f'Default value {default} is not a valid option')
 

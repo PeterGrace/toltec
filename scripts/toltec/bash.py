@@ -3,10 +3,10 @@
 
 """Bridge Bash with Python."""
 
-from typing import Dict, List, Optional, Tuple, Union
-from docker.client import DockerClient
 import shlex
 import subprocess
+from typing import Dict, List, Optional, Tuple, Union
+from docker.client import DockerClient
 
 AssociativeArray = Dict[str, str]
 IndexedArray = List[Optional[str]]
@@ -17,7 +17,6 @@ Functions = Dict[str, str]
 
 class ScriptError(Exception):
     """Raised when a launched Bash script exits with a non-zero code."""
-    pass
 
 
 # Variables which are defined by default by Bash.  Those variables are excluded
@@ -51,6 +50,8 @@ declare -f
 declare -p
 '''
     env: Dict[str, str] = {}
+
+    # pylint: disable=subprocess-run-check
     declarations_subshell = subprocess.run(
         ['/usr/bin/env', 'bash'],
         input=src.encode(),
@@ -248,12 +249,15 @@ def run_script(variables: Variables, script: str):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT)
 
+    assert process.stdin is not None
+    assert process.stdout is not None
     process.stdin.write((put_variables(variables) + '\n' + script).encode())
     process.stdin.close()
 
     while process.poll() is None:
         line = process.stdout.readline()
-        if line: yield line.decode().strip()
+        if line:
+            yield line.decode().strip()
 
     if process.returncode != 0:
         raise ScriptError(f'Script exited with code {process.returncode}')
@@ -283,7 +287,8 @@ def run_script_in_container(
 
     try:
         for line in container.logs(stream=True):
-            if line: yield line.decode().strip()
+            if line:
+                yield line.decode().strip()
 
         result = container.wait()
 

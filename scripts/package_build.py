@@ -2,17 +2,18 @@
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
 
+"""Build packages from a given recipe."""
+
 import argparse
-import docker
 import logging
 import os
-import sys
 import shutil
+import sys
+import docker
 from toltec.recipe import Recipe
-from toltec.util import logging_format, query_user
+from toltec.util import LOGGING_FORMAT, query_user
 
-parser = argparse.ArgumentParser(
-    description='Build packages from a given recipe.')
+parser = argparse.ArgumentParser(description=sys.modules[__name__].__doc__)
 
 parser.add_argument(
     'recipe_dir', metavar='RECIPEDIR',
@@ -32,7 +33,7 @@ parser.add_argument(
     help='show debugging information')
 
 args = parser.parse_args()
-logging.basicConfig(format=logging_format, level=args.verbose)
+logging.basicConfig(format=LOGGING_FORMAT, level=args.verbose)
 
 try:
     os.makedirs(args.work_dir)

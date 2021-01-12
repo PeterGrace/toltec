@@ -14,12 +14,13 @@ import subprocess
 from typing import Dict, List, Optional
 import requests
 from .recipe import Recipe, Package
-from .util import file_sha256, http_date_format
+from .util import file_sha256, HTTP_DATE_FORMAT
 
 logger = logging.getLogger(__name__)
 
 
 class Repo:
+    """Repository of Toltec packages."""
     def __init__(self, recipes_dir: str, work_dir: str, repo_dir: str):
         """
         Initialize the package repository.
@@ -49,7 +50,7 @@ class Repo:
 
         for recipe in self.recipes.values():
             missing[recipe.name] = []
-            logger.info(f'Processing recipe {recipe.name}')
+            logger.info('Processing recipe %s', recipe.name)
 
             for package in recipe.packages.values():
                 filename = package.filename()
@@ -65,7 +66,7 @@ class Repo:
                         req = requests.get(remote_path)
 
                         if req.status_code == 200:
-                            logger.info(f'Found {package.name} on remote repo')
+                            logger.info('Found %s on remote repo', package.name)
 
                             with open(local_path, 'wb') as local:
                                 for chunk in req.iter_content(chunk_size=1024):
@@ -73,20 +74,21 @@ class Repo:
 
                             last_modified = int(datetime.strptime(
                                 req.headers['Last-Modified'],
-                                http_date_format).timestamp())
+                                HTTP_DATE_FORMAT).timestamp())
 
                             os.utime(local_path, (last_modified, last_modified))
                             continue
                     else:
                         req = requests.head(remote_path)
-                        if req.status_code == 200: continue
+                        if req.status_code == 200:
+                            continue
 
                 missing[recipe.name].append(package)
 
         # Build missing packages
         for recipe_name, packages in missing.items():
             if packages:
-                logger.info(f"Building missing package(s): {packages}")
+                logger.info('Building missing package(s): %s', packages)
                 subprocess.run([
                     'scripts/package-build',
                     os.path.join(self.recipes_dir, recipe_name),

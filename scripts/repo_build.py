@@ -2,13 +2,15 @@
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
 
+"""Build all packages and create a package index."""
+
 import argparse
 import logging
+import sys
 from toltec.repo import Repo
-from toltec.util import logging_format
+from toltec.util import LOGGING_FORMAT
 
-parser = argparse.ArgumentParser(
-    description='Build all packages and create a package index.')
+parser = argparse.ArgumentParser(description=sys.modules[__name__].__doc__)
 
 parser.add_argument(
     'recipes_dir', metavar='RECIPESDIR',
@@ -47,7 +49,7 @@ group.add_argument(
 
 args = parser.parse_args()
 remote = args.remote_repo if not args.local else None
-logging.basicConfig(format=logging_format, level=args.verbose)
+logging.basicConfig(format=LOGGING_FORMAT, level=args.verbose)
 
 repo = Repo(args.recipes_dir, args.work_dir, args.repo_dir)
 repo.make_packages(remote, fetch_missing=not args.no_fetch)

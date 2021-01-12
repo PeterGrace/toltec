@@ -10,7 +10,8 @@ packages (in the latter case, it is called a split package).
 """
 
 from itertools import product
-from typing import List, Optional
+from typing import Optional
+from collections.abc import Iterable
 import logging
 import os
 import re
@@ -21,25 +22,34 @@ import requests
 from . import bash, util
 
 logger = logging.getLogger(__name__)
-url_regex = re.compile(r'[a-z]+://')
-image_prefix = 'ghcr.io/toltec-dev/'
-default_image = 'base:v1.2.2'
+
+# Detect non-local paths
+URL_REGEX = re.compile(r'[a-z]+://')
+
+# Prefix for all Toltec Docker images
+IMAGE_PREFIX = 'ghcr.io/toltec-dev/'
+
+# Toltec Docker image used for generic tasks
+DEFAULT_IMAGE = 'base:v1.2.2'
 
 
 class InvalidRecipeError(Exception):
-    pass
+    """Raised when a recipe contains an error."""
 
 
 class BuildError(Exception):
-    pass
+    """Raised when a build step fails."""
 
 
 class RecipeAdapter(logging.LoggerAdapter):
+    """Prefix log entries with the current recipe name."""
     def process(self, msg, kwargs):
         return '%s: %s' % (self.extra['recipe'], msg), kwargs
 
 
+# pylint: disable=too-many-instance-attributes
 class Recipe:
+    """Load and execute recipes."""
     def __init__(self, name: str, root: str, source: str):
         """
         Load a recipe from a Bash source.
@@ -98,8 +108,8 @@ which has a build() step')
                     raise InvalidRecipeError('Missing required function \
 {pkg_name}() for corresponding package')
 
-                self.packages[pkg_name] = Package(pkg_name, declarations,
-                        functions[pkg_name])
+                self.packages[pkg_name] = Package(pkg_name, self,
+                    functions[pkg_name])
 
 
     @classmethod
@@ -114,7 +124,7 @@ which has a build() step')
 
     def make(
             self, src_dir: str, pkg_dir: str, docker: DockerClient,
-            packages: Optional[List[str]] = None) -> None:
+            packages: Optional[Iterable[str]] = None) -> None:
         """
         Make this recipe.
 
@@ -128,16 +138,14 @@ which has a build() step')
         :param packages: list of packages to make (default: all packages
             defined by this recipe)
         """
-        if packages is None:
-            packages = self.packages.keys()
-
         self.fetch_source(src_dir)
         self.prepare(src_dir)
         self.build(src_dir, docker)
         self.strip(src_dir, docker)
 
-        for package in packages:
-            sub_pkg_dir = os.path.join(pkg_dir, package)
+        for package in packages if packages is not None \
+                else self.packages.keys():
+            sub_pkg_dir = os.path.join(pkg_dir, package or '')
             os.makedirs(sub_pkg_dir, exist_ok=True)
             self.packages[package].package(src_dir, sub_pkg_dir)
 
@@ -157,14 +165,14 @@ which has a build() step')
         checksums = self.sha256sums
         noextract = self.noextract
 
-        for i in range(len(sources)):
-            source = sources[i] or ''
-            checksum = checksums[i] or ''
+        for source, checksum in zip(sources, checksums):
+            source = source or ''
+            checksum = checksum or ''
 
             filename = os.path.basename(source)
             local_path = os.path.join(src_dir, filename)
 
-            if url_regex.match(source) is None:
+            if URL_REGEX.match(source) is None:
                 # Get source file from the recipe’s root
                 shutil.copy2(os.path.join(self.root, source), local_path)
             else:
@@ -229,7 +237,7 @@ source file '{source}', got {req.status_code}")
         uid = os.getuid()
 
         logs = bash.run_script_in_container(
-            docker, image=image_prefix + self.image,
+            docker, image=IMAGE_PREFIX + self.image,
             mounts=[Mount(
                 type='bind',
                 source=os.path.abspath(src_dir),
@@ -259,7 +267,7 @@ source file '{source}', got {req.status_code}")
         mount_src = '/src'
 
         logs = bash.run_script_in_container(
-            docker, image=image_prefix + default_image,
+            docker, image=IMAGE_PREFIX + DEFAULT_IMAGE,
             mounts=[Mount(
                 type='bind',
                 source=os.path.abspath(src_dir),
@@ -279,6 +287,7 @@ source file '{source}', got {req.status_code}")
 
 
 class PackageAdapter(logging.LoggerAdapter):
+    """Prefix log entries with the current package name."""
     def process(self, msg, kwargs):
         return '%s (%s): %s' % (
             self.extra['package'],
@@ -287,7 +296,9 @@ class PackageAdapter(logging.LoggerAdapter):
         ), kwargs
 
 
+# pylint: disable=too-many-instance-attributes
 class Package:
+    """Load and execute a package from a recipe."""
     def __init__(self, name: str, parent: Recipe, source: str):
         """
         Load a package from a Bash source.
@@ -330,13 +341,13 @@ for package {self.name}')
         for rel, step in product(('pre', 'post'), ('remove', 'upgrade')):
             self.install[rel + step] = functions.get(rel + step, '')
 
-    def id(self) -> str:
+    def pkgid(self) -> str:
         """Get the unique identifier of this package."""
         return '_'.join((self.name, self.pkgver, self.arch))
 
     def filename(self) -> str:
         """Get the name of the archive corresponding to this package."""
-        return self.id() + '.ipk'
+        return self.pkgid() + '.ipk'
 
     def control_fields(self) -> str:
         """Get the package-specific control fields."""
@@ -360,6 +371,17 @@ License: {self.license}
         return control
 
     def package(self, src_dir: str, pkg_dir: str) -> None:
+        """
+        Extract build artifacts for the current package.
+
+        The ``src_dir`` parameter should point to a directory containing all
+        build artifacts from the parent recipe (see :func:`Package.build`).
+        The ``pkg_dir`` parameter should b an empty directory where the
+        package structure will be constructed.
+
+        :param src_dir: directory into which source files are stored
+        :param pkg_dir: directory into which the package shall be constructed
+        """
         self.logger.info('Packaging build artifacts')
 
         logs = bash.run_script(
