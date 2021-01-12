@@ -10,12 +10,11 @@ packages (in the latter case, it is called a split package).
 """
 
 from itertools import product
-from typing import Tuple, Optional
+from typing import List, Optional
 import logging
 import os
 import re
 import shutil
-import subprocess
 from docker.client import DockerClient
 from docker.types import Mount
 import requests
@@ -57,6 +56,7 @@ class Recipe:
         self.root = root
         self.logger = RecipeAdapter(logger, {'recipe': name})
         self._bash_variables = variables
+        self._bash_functions = functions
 
         # Parse and check recipe metadata
         self.pkgnames = _check_field_indexed(variables, 'pkgnames')
@@ -91,7 +91,7 @@ which has a build() step')
 
         if len(self.pkgnames) == 1:
             pkg_name = self.pkgnames[0]
-            self.packages[pkg_name] = Package(name, declarations, source)
+            self.packages[pkg_name] = Package(name, self, source)
         else:
             for pkg_name in self.pkgnames:
                 if pkg_name not in functions:
@@ -112,15 +112,46 @@ which has a build() step')
         """Get the recipe-wide control fields."""
         return f"Maintainer: {self.maintainer}\n"
 
+    def make(
+            self, src_dir: str, pkg_dir: str, docker: DockerClient,
+            packages: Optional[List[str]] = None) -> None:
+        """
+        Make this recipe.
+
+        Both ``src_dir`` and ``pkg_dir`` should be existing but empty
+        directories.
+
+        :param src_dir: directory into which source files will be fetched
+            and the build will happen
+        :param pkg_dir: directory under which packages will be created
+        :param docker: docker client to use for running the build
+        :param packages: list of packages to make (default: all packages
+            defined by this recipe)
+        """
+        if packages is None:
+            packages = self.packages.keys()
+
+        self.fetch_source(src_dir)
+        self.prepare(src_dir)
+        self.build(src_dir, docker)
+        self.strip(src_dir, docker)
+
+        for package in packages:
+            sub_pkg_dir = os.path.join(pkg_dir, package)
+            os.makedirs(sub_pkg_dir, exist_ok=True)
+            self.packages[package].package(src_dir, sub_pkg_dir)
+
     def fetch_source(self, src_dir: str) -> None:
         """
         Fetch all source files required to build this recipe and automatically
         extract source archives.
 
+        The ``src_dir`` parameter should point to an existing but empty
+        directory where the source files will be saved.
+
         :param src_dir: directory into which source files are fetched
         """
         self.logger.info('Fetching source files')
-        os.makedirs(src_dir)
 
         sources = self.source
         checksums = self.sha256sums
@@ -160,6 +191,9 @@ source file '{source}', got {req.status_code}")
         """
         Prepare source files before building.
 
+        The ``src_dir`` parameter should point to a directory containing all
+        the required source files for the recipe (see :func:`fetch_source`).
+
         :param src_dir: directory into which source files are stored
         """
         if not self.actions['prepare']:
@@ -173,11 +207,15 @@ source file '{source}', got {req.status_code}")
             script=self.actions['prepare'])
 
         for line in logs:
-            self.logger.debug(line.decode().strip())
+            self.logger.debug(line)
 
     def build(self, src_dir: str, docker: DockerClient) -> None:
         """
         Build source files.
+
+        The ``src_dir`` parameter should point to a directory containing all
+        the required source files for the recipe (see :func:`fetch_source`
+        and :func:`prepare`).
 
         :param src_dir: directory into which source files are stored
         :param docker: docker client to use for running the build
@@ -204,11 +242,15 @@ source file '{source}', got {req.status_code}")
             )))
 
         for line in logs:
-            self.logger.debug(line.decode().strip())
+            self.logger.debug(line)
 
     def strip(self, src_dir: str, docker: DockerClient) -> None:
         """
         Strip all debugging symbols from binaries.
+
+        The ``src_dir`` parameter should point to a directory containing all
+        the build artifacts from the recipe (see :func:`fetch_source`,
+        :func:`prepare`, and :func:`build`).
 
         :param src_dir: directory into which source files were compiled
         :param docker: docker client to use for stripping
@@ -233,34 +275,40 @@ source file '{source}', got {req.status_code}")
             )))
 
         for line in logs:
-            self.logger.debug(line.decode().strip())
+            self.logger.debug(line)
+
+
+class PackageAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return '%s (%s): %s' % (
+            self.extra['package'],
+            self.extra['recipe'],
+            msg
+        ), kwargs
 
 
 class Package:
-    def __init__(
-        self,
-        name: str,
-        parent_declarations: Tuple[bash.Variables, bash.Functions],
-        source: str
-    ):
+    def __init__(self, name: str, parent: Recipe, source: str):
         """
         Load a package from a Bash source.
 
         :param name: name of the package
-        :param parent_declarations: variables and functions from the recipe
-            which declares this package
+        :param parent: recipe which declares this package
         :param source: source string of the package (either the full recipe
             script if it contains only a single package, or the package
             script for split packages)
         :raises InvalidRecipeError: if the package contains an error
         """
-        parent_variables, parent_functions = parent_declarations
         variables, functions = bash.get_declarations(source)
-        variables = {**parent_variables, **variables}
-        functions = {**parent_functions, **functions}
+        variables = {**parent._bash_variables, **variables}
+        functions = {**parent._bash_functions, **functions}
 
         self.name = name
+        self.logger = PackageAdapter(logger, {
+            'recipe': parent.name,
+            'package': name})
         self._bash_variables = variables
+        self._bash_functions = functions
 
         # Parse and check package metadata
         self.pkgver = _check_field_string(variables, 'pkgver')
@@ -310,6 +358,19 @@ License: {self.license}
                 {', '.join(item for item in self.conflicts if item)}\n"
 
         return control
+
+    def package(self, src_dir: str, pkg_dir: str) -> None:
+        self.logger.info('Packaging build artifacts')
+
+        logs = bash.run_script(
+            variables={
+                **self._bash_variables,
+                'srcdir': src_dir,
+                'pkgdir': pkg_dir},
+            script=self.action)
+
+        for line in logs:
+            self.logger.debug(line)
 
 
 # Helpers to check that fields of the right type are defined in a recipe

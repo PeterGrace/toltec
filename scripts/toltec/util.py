@@ -6,7 +6,8 @@ import hashlib
 import itertools
 import os
 import shutil
-from typing import Dict, List
+import sys
+from typing import Dict, List, Set
 import zipfile
 
 # Date format used in HTTP headers such as Last-Modified
@@ -96,3 +97,39 @@ def auto_extract(archive_path: str, dest_path: str) -> bool:
         return True
 
     return False
+
+def query_user(
+        question: str,
+        default: str,
+        options: List[str] = ['y', 'n'],
+        aliases: Dict[str, str] = {'yes': 'y', 'no': 'n'}):
+    """
+    Ask the user to make a choice.
+
+    :param question: message to display before the choice
+    :param default: default choice if the user inputs an empty string
+    :param options: list of valid options (should be lowercase strings)
+    :param aliases: accepted aliases for the valid options
+    :returns: option chosen by the user
+    """
+    if default not in options:
+        raise ValueError(f'Default value {default} is not a valid option')
+
+    prompt = '/'.join(
+        option if option != default else option.upper()
+        for option in options)
+
+    while True:
+        sys.stdout.write(f'{question} [{prompt}] ')
+        choice = input().lower()
+
+        if not choice:
+            return default
+
+        if choice in options:
+            return choice
+
+        if choice in aliases:
+            return aliases[choice]
+
+        print('Invalid answer. Please choose among the valid options.')

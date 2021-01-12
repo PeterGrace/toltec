@@ -253,7 +253,7 @@ def run_script(variables: Variables, script: str):
 
     while process.poll() is None:
         line = process.stdout.readline()
-        if line: yield line
+        if line: yield line.decode().strip()
 
     if process.returncode != 0:
         raise ScriptError(f'Script exited with code {process.returncode}')
@@ -283,7 +283,7 @@ def run_script_in_container(
 
     try:
         for line in container.logs(stream=True):
-            if line: yield line
+            if line: yield line.decode().strip()
 
         result = container.wait()
 
