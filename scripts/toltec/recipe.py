@@ -146,6 +146,10 @@ which has a build() step')
 
         for package in packages if packages is not None \
                 else self.packages.keys():
+            if package not in self.packages:
+                raise BuildError(f'Package {package} does not exist in \
+recipe {self.name}')
+
             sub_pkg_dir = os.path.join(pkg_dir, package or '')
             os.makedirs(sub_pkg_dir, exist_ok=True)
             self.packages[package].package(src_dir, sub_pkg_dir)
