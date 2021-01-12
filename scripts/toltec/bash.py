@@ -234,6 +234,14 @@ def _parse_func(lexer) -> Tuple[int, int]:
     return start_byte, end_byte
 
 def run_script(variables: Variables, script: str):
+    """
+    Run a Bash script and stream its output.
+
+    :param variables: Bash variables to set before running the script
+    :param script: Bash script to execute
+    :returns: generator yielding output lines from the script
+    :raises ScriptError: if the script exits with a non-zero code
+    """
     process = subprocess.Popen(
         ['/usr/bin/env', 'bash'],
         stdin=subprocess.PIPE,
@@ -253,6 +261,17 @@ def run_script(variables: Variables, script: str):
 def run_script_in_container(
         docker: DockerClient, image: str,
         mounts: List, variables: Variables, script: str):
+    """
+    Run a Bash script inside a Docker container and stream its output.
+
+    :param docker: Docker client
+    :param image: image to use for the new container
+    :param mounts: paths to mount in the container
+    :param variables: Bash variables to set before running the script
+    :param script: Bash script to execute
+    :returns: generator yielding output lines from the script
+    :raises ScriptError: if the script exits with a non-zero code
+    """
     container = docker.containers.run(
         image,
         mounts=mounts,
@@ -260,8 +279,15 @@ def run_script_in_container(
             '/usr/bin/env', 'bash', '-c',
             put_variables(variables) + '\n' + script,
         ],
-        detach=True,
-        remove=True)
+        detach=True)
 
-    for line in container.logs(stream=True):
-        if line: yield line
+    try:
+        for line in container.logs(stream=True):
+            if line: yield line
+
+        result = container.wait()
+
+        if result['StatusCode'] != 0:
+            raise ScriptError(f"Script exited with code {result['StatusCode']}")
+    finally:
+        container.remove()
