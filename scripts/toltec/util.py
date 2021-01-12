@@ -12,6 +12,9 @@ import zipfile
 # Date format used in HTTP headers such as Last-Modified
 http_date_format = "%a, %d %b %Y %H:%M:%S %Z"
 
+# Logging format for build scripts
+logging_format = '[%(levelname)8s] %(name)s: %(message)s'
+
 def file_sha256(path: str) -> str:
     """Compute the SHA-256 checksum of a file."""
     sha256 = hashlib.sha256()

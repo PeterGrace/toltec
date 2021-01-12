@@ -35,6 +35,11 @@ class BuildError(Exception):
     pass
 
 
+class RecipeAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return '%s: %s' % (self.extra['recipe'], msg), kwargs
+
+
 class Recipe:
     def __init__(self, name: str, root: str, source: str):
         """
@@ -50,6 +55,7 @@ class Recipe:
 
         self.name = name
         self.root = root
+        self.logger = RecipeAdapter(logger, {'recipe': name})
         self._bash_variables = variables
 
         # Parse and check recipe metadata
@@ -113,7 +119,7 @@ which has a build() step')
 
         :param src_dir: directory into which source files are fetched
         """
-        logger.info(f'[{self.name}] Fetching source files')
+        self.logger.info('Fetching source files')
         os.makedirs(src_dir)
 
         sources = self.source
@@ -157,10 +163,10 @@ source file '{source}', got {req.status_code}")
         :param src_dir: directory into which source files are stored
         """
         if not self.actions['prepare']:
-            logger.info(f'[{self.name}] Skipping prepare (nothing to do)')
+            self.logger.info('Skipping prepare (nothing to do)')
             return
 
-        logger.info(f'[{self.name}] Preparing source files')
+        self.logger.info('Preparing source files')
         subprocess.run('\n'.join((
             bash.put_variables({
                 **self._bash_variables,
@@ -177,10 +183,10 @@ source file '{source}', got {req.status_code}")
         :param docker: docker client to use for running the build
         """
         if not self.actions['build']:
-            logger.info(f'[{self.name}] Skipping build (nothing to do)')
+            self.logger.info('Skipping build (nothing to do)')
             return
 
-        logger.info(f'[{self.name}] Building binaries')
+        self.logger.info('Building binaries')
         mount_src = '/src'
         uid = os.getuid()
 
@@ -207,7 +213,7 @@ source file '{source}', got {req.status_code}")
             remove=True)
 
         for line in container.logs(stream=True):
-            logger.debug(f'[{self.name} build] {line.decode().strip()}')
+            self.logger.debug(line.decode().strip())
 
     def strip(self, src_dir: str, docker: DockerClient) -> None:
         """
@@ -216,10 +222,10 @@ source file '{source}', got {req.status_code}")
         :param src_dir: directory into which source files were compiled
         :param docker: docker client to use for stripping
         """
-        logger.info(f'[{self.name}] Stripping binaries')
+        self.logger.info('Stripping binaries')
         mount_src = '/src'
 
-        docker.containers.run(
+        container = docker.containers.run(
             image_prefix + default_image,
             mounts=[Mount(
                 type='bind',
@@ -237,7 +243,11 @@ source file '{source}', got {req.status_code}")
 | xargs --null strip --strip-all || true',
                 ))
             ],
+            detach=True,
             remove=True)
+
+        for line in container.logs(stream=True):
+            self.logger.debug(line.decode().strip())
 
 
 class Package:

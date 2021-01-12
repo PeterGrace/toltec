@@ -5,6 +5,7 @@
 import argparse
 import logging
 from toltec.repo import Repo
+from toltec.util import logging_format
 
 parser = argparse.ArgumentParser(
     description='Build all packages and create a package index.')
@@ -25,6 +26,11 @@ parser.add_argument(
     '-n', '--no-fetch', action='store_true',
     help='do not fetch missing packages from the remote repository')
 
+parser.add_argument(
+    '-v', '--verbose', action='store_const',
+    const=logging.DEBUG, default=logging.INFO,
+    help='show debugging information')
+
 group = parser.add_mutually_exclusive_group()
 
 group.add_argument(
@@ -41,8 +47,7 @@ group.add_argument(
 
 args = parser.parse_args()
 remote = args.remote_repo if not args.local else None
-
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(format=logging_format, level=args.verbose)
 
 repo = Repo(args.recipes_dir, args.work_dir, args.repo_dir)
 repo.make_packages(remote, fetch_missing=not args.no_fetch)
