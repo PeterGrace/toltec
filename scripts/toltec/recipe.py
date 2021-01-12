@@ -12,6 +12,7 @@ packages (in the latter case, it is called a split package).
 from itertools import product
 from typing import Optional
 from collections.abc import Iterable
+import glob
 import logging
 import os
 import re
@@ -232,7 +233,7 @@ source file '{source}', got {req.status_code}")
             self.logger.info('Skipping build (nothing to do)')
             return
 
-        self.logger.info('Building binaries')
+        self.logger.info('Building artifacts')
         mount_src = '/src'
         uid = os.getuid()
 
@@ -276,10 +277,10 @@ source file '{source}', got {req.status_code}")
             script='\n'.join((
                 # Strip binaries in the target arch
                 f'find "{mount_src}" -type f -executable -print0 \
-| xargs --null "${{CROSS_COMPILE}}strip" --strip-all || true',
+| xargs --no-run-if-empty --null "${{CROSS_COMPILE}}strip" --strip-all || true',
                 # Strip binaries in the host arch
                 f'find "{mount_src}" -type f -executable -print0 \
-| xargs --null strip --strip-all || true',
+| xargs --no-run-if-empty --null strip --strip-all || true',
             )))
 
         for line in logs:
@@ -393,6 +394,11 @@ License: {self.license}
 
         for line in logs:
             self.logger.debug(line)
+
+        self.logger.debug('Resulting tree:')
+
+        for filename in glob.iglob(pkg_dir + '/**/*', recursive=True):
+            self.logger.debug(' - %s', filename.removeprefix(pkg_dir))
 
 
 # Helpers to check that fields of the right type are defined in a recipe
