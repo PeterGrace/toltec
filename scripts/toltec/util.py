@@ -97,6 +97,9 @@ def auto_extract(archive_path: str, dest_path: str) -> bool:
                             open(file_path, 'wb') as target:
                         shutil.copyfileobj(source, target)
 
+                    mode = member.external_attr >> 16
+                    os.chmod(file_path, mode)
+
         return True
 
     return False
