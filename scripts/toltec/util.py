@@ -97,8 +97,10 @@ def auto_extract(archive_path: str, dest_path: str) -> bool:
                             open(file_path, 'wb') as target:
                         shutil.copyfileobj(source, target)
 
-                    mode = member.external_attr >> 16
-                    os.chmod(file_path, mode)
+                    # Restore file permissions if specified in the archive
+                    mode = member.external_attr >> 16 & 0x1FF
+                    if mode != 0:
+                        os.chmod(file_path, mode)
 
         return True
 
