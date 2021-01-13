@@ -63,19 +63,23 @@ $(RECIPES_PUSH): %:
 	scp build/package/"$(@:%-push=%)"/pkg/*.ipk root@"$(HOST)":.cache/opkg
 
 format:
-	@echo "==> Checking the formatting of shell scripts"
+	@echo "==> Checking Bash formatting"
 	shfmt -d .
+	@echo "==> Checking Python formatting"
+	yapf --diff --recursive scripts
 
 format-fix:
-	@echo "==> Fixing the formatting of shell scripts"
+	@echo "==> Fixing Bash formatting"
 	shfmt -l -w .
+	@echo "==> Fixing Python formatting"
+	yapf --in-place --recursive scripts
 
 lint:
-	@echo "==> Linting shell scripts"
+	@echo "==> Linting Bash scripts"
 	shellcheck $$(shfmt -f .)
-	@echo "==> Typechecking Python scripts"
+	@echo "==> Typechecking Python files"
 	MYPYPATH=scripts mypy scripts
-	@echo "==> Linting Python scripts"
+	@echo "==> Linting Python files"
 	pylint scripts
 	@echo "==> Verifying that the bootstrap checksum is correct"
 	./scripts/bootstrap/checksum-check
