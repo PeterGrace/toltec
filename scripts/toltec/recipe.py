@@ -20,7 +20,7 @@ import shutil
 from docker.client import DockerClient
 from docker.types import Mount
 import requests
-from . import bash, util
+from . import bash, util, ipk
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +153,7 @@ recipe {self.name}')
             sub_pkg_dir = os.path.join(pkg_dir, package or '')
             os.makedirs(sub_pkg_dir, exist_ok=True)
             self.packages[package].package(src_dir, sub_pkg_dir)
+            self.packages[package].archive(sub_pkg_dir, pkg_dir)
 
     def fetch_source(self, src_dir: str) -> None:
         """
@@ -323,6 +324,7 @@ class Package:
         self.logger = PackageAdapter(logger, {
             'recipe': parent.name,
             'package': name})
+        self.parent = parent
         self._bash_variables = variables
         self._bash_functions = functions
 
@@ -377,11 +379,11 @@ License: {self.license}
 
     def package(self, src_dir: str, pkg_dir: str) -> None:
         """
-        Extract build artifacts for the current package.
+        Make the package structure from existing build artifacts.
 
         The ``src_dir`` parameter should point to a directory containing all
         build artifacts from the parent recipe (see :func:`Package.build`).
-        The ``pkg_dir`` parameter should b an empty directory where the
+        The ``pkg_dir`` parameter should point to an empty directory where the
         package structure will be constructed.
 
         :param src_dir: directory into which source files are stored
@@ -403,6 +405,23 @@ License: {self.license}
 
         for filename in glob.iglob(pkg_dir + '/**/*', recursive=True):
             self.logger.debug(' - %s', filename.removeprefix(pkg_dir))
+
+    def archive(self, pkg_dir: str, ar_dir: str) -> None:
+        """
+        Create an archive for this package.
+
+        :param pkg_dir: directory where the package structure is located
+            (see :func:`package`)
+        :param ar_dir: directory into which the resulting archive will be saved
+        """
+        self.logger.info('Creating archive')
+        ar_path = os.path.join(ar_dir, self.filename())
+
+        with open(ar_path, 'wb') as file:
+            ipk.make_ipk(
+                file, 0, pkg_dir,
+                metadata=self.control_fields() + self.parent.control_fields(),
+                scripts={})
 
 
 # Helpers to check that fields of the right type are defined in a recipe
