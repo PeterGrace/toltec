@@ -55,7 +55,6 @@ logging.basicConfig(format=LOGGING_FORMAT, level=args.verbose)
 docker_client = docker.from_env()
 repo = Repo(args.recipes_dir, args.work_dir, args.repo_dir)
 
-repo.make_packages(
-    remote, fetch_missing=not args.no_fetch,
-    docker=docker_client)
+missing = repo.fetch_packages(remote, fetch_missing=not args.no_fetch)
+repo.make_packages(missing, docker_client)
 repo.make_index()

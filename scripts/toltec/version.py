@@ -4,6 +4,7 @@
 """Work with Debian-style package versions."""
 
 import re
+from typing import Optional
 
 # Characters permitted in the upstream version part of a version number
 _VERSION_CHARS = re.compile('^[A-Za-z0-9.+~-]+$')
@@ -29,7 +30,7 @@ class Version:
         if _VERSION_CHARS.fullmatch(revision) is None:
             raise InvalidVersionError('Invalid chars in revision')
 
-        self._original = None
+        self._original: Optional[str] = None
 
     @classmethod
     def parse(cls, version: str):
@@ -54,7 +55,7 @@ class Version:
         upstream = version
 
         result = Version(epoch, upstream, revision)
-        result._original = original
+        result._original = original # pylint:disable=protected-access
         return result
 
     def __str__(self):

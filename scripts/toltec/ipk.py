@@ -4,11 +4,11 @@
 """Make ipk packages."""
 
 from gzip import GzipFile
-from typing import Dict
-from io import IOBase, BytesIO
+from typing import Dict, IO
+from io import BytesIO
 import tarfile
 
-def targzopen(fileobj: IOBase, epoch: int):
+def _targz_open(fileobj: IO[bytes], epoch: int) -> tarfile.TarFile:
     """
     Open a gzip compressed tar archive for writing.
 
@@ -25,7 +25,7 @@ def targzopen(fileobj: IOBase, epoch: int):
         gzipobj.close()
         raise
 
-    archive._extfileobj = False
+    archive._extfileobj = False # type:ignore # pylint:disable=protected-access
     return archive
 
 def _clean_info(root: str, epoch: int, info: tarfile.TarInfo) \
@@ -64,7 +64,7 @@ def _add_file(
     archive.addfile(_clean_info('.', epoch, info), BytesIO(data))
 
 def make_control(
-        file: IOBase, epoch: int,
+        file: IO[bytes], epoch: int,
         metadata: str, scripts: Dict[str, str]):
     """
     Create the control sub-archive.
@@ -77,14 +77,14 @@ def make_control(
     :param metadata: package metadata (main control file)
     :param scripts: optional maintainer scripts
     """
-    with targzopen(file, epoch) as archive:
+    with _targz_open(file, epoch) as archive:
         _add_file(archive, 'control', 0o644, epoch, metadata.encode())
 
         for name, script in scripts.items():
             _add_file(archive, name, 0o755, epoch, script.encode())
 
 def make_data(
-        file: IOBase,
+        file: IO[bytes],
         epoch: int,
         pkg_dir: str) -> None:
     """
@@ -94,12 +94,12 @@ def make_data(
     :param epoch: fixed modification time to set
     :param pkg_dir: directory in which the package tree exists
     """
-    with targzopen(file, epoch) as archive:
+    with _targz_open(file, epoch) as archive:
         archive.add(pkg_dir, filter=lambda info: \
             _clean_info(pkg_dir, epoch, info))
 
 def make_ipk(
-        file: IOBase,
+        file: IO[bytes],
         epoch: int,
         pkg_dir: str,
         metadata: str,
@@ -114,7 +114,7 @@ def make_ipk(
     :param scripts: optional maintainer scripts
     """
     with BytesIO() as control, BytesIO() as data, \
-            targzopen(file, epoch) as archive:
+            _targz_open(file, epoch) as archive:
         make_control(control, epoch, metadata, scripts)
         _add_file(archive, 'control.tar.gz', 0o644, epoch, control.getvalue())
 

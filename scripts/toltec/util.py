@@ -25,7 +25,7 @@ def file_sha256(path: str) -> str:
     view = memoryview(buffer)
 
     with open(path, 'rb', buffering=0) as file:
-        for length in iter(lambda: file.readinto(view), 0): # type: ignore
+        for length in iter(lambda: file.readinto(view), 0): # type:ignore
             sha256.update(view[:length])
 
     return sha256.hexdigest()

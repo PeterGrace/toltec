@@ -13,7 +13,7 @@ import shutil
 from typing import Dict, List, Optional
 from docker.client import DockerClient
 import requests
-from .recipe import Recipe, Package
+from .recipe import Recipe
 from .util import file_sha256, HTTP_DATE_FORMAT
 
 logger = logging.getLogger(__name__)
@@ -43,18 +43,17 @@ class Repo:
                 self.recipes[name] = Recipe.from_file(name,
                     os.path.join(recipes_dir, name))
 
-    def make_packages(
-            self, remote: Optional[str], fetch_missing: bool,
-            docker: DockerClient) -> None:
+    def fetch_packages(self, remote: Optional[str], fetch_missing: bool) \
+            -> Dict[str, List[str]]:
         """
-        Fetch missing packages and build new packages.
+        Fetch missing packages.
 
         :param remote: remote server from which to check for existing packages
         :param fetch_missing: pass true to fetch missing packages from remote
-        :param docker: docker client to use for running the builds
+        :returns: missing packages grouped by parent recipe
         """
         logger.info('Scanning for missing packages')
-        missing: Dict[str, List[Package]] = {}
+        missing: Dict[str, List[str]] = {}
 
         for recipe in self.recipes.values():
             missing[recipe.name] = []
@@ -92,12 +91,23 @@ class Repo:
                     package.pkgid(), recipe.name)
                 missing[recipe.name].append(package.name)
 
-        logger.info('Building missing packages')
+        return missing
 
-        for recipe_name, packages in missing.items():
+    def make_packages(
+            self, packages_by_recipe: Dict[str, List[str]],
+            docker: DockerClient) -> None:
+        """
+        Build packages and move them to the repo.
+
+        :param packages_by_recipe: packages to build (keys are recipes, values
+            are list of packages for each recipe)
+        :param docker: docker client to use for running the builds
+        """
+        logger.info('Building packages')
+
+        for recipe_name, packages in packages_by_recipe.items():
             if packages:
                 recipe = self.recipes[recipe_name]
-
                 recipe_work_dir = os.path.join(self.work_dir, recipe_name)
                 os.makedirs(recipe_work_dir, exist_ok=True)
 

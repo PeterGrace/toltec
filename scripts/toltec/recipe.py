@@ -34,14 +34,19 @@ _IMAGE_PREFIX = 'ghcr.io/toltec-dev/'
 # Toltec Docker image used for generic tasks
 _DEFAULT_IMAGE = 'base:v1.2.2'
 
-# Path and contents of the Bash library for install scripts
-_INSTALL_LIB_PATH = os.path.join(os.path.dirname(__file__), '..', 'install-lib')
-_INSTALL_LIB = ''
+# Contents of the Bash library for install scripts
+def _read_bash_lib(path):
+    result = ''
 
-with open(_INSTALL_LIB_PATH, 'r') as file:
-    for line in file:
-        if not line.strip().startswith('#'):
-            _INSTALL_LIB += line
+    with open(path, 'r') as file:
+        for line in file:
+            if not line.strip().startswith('#'):
+                result += line
+
+    return result
+
+_INSTALL_LIB = _read_bash_lib(os.path.join(
+    os.path.dirname(__file__), '..', 'install-lib'))
 
 
 class InvalidRecipeError(Exception):
@@ -58,8 +63,7 @@ class RecipeAdapter(logging.LoggerAdapter):
         return '%s: %s' % (self.extra['recipe'], msg), kwargs
 
 
-# pylint: disable=too-many-instance-attributes
-class Recipe:
+class Recipe: # pylint:disable=too-many-instance-attributes
     """Load and execute recipes."""
     def __init__(self, name: str, root: str, source: str):
         """
@@ -84,9 +88,9 @@ class Recipe:
 
         try:
             self.timestamp = dateutil.parser.isoparse(timestamp_str)
-        except ValueError:
+        except ValueError as err:
             raise InvalidRecipeError("Field 'timestamp' does not contain a \
-valid ISO-8601 date")
+valid ISO-8601 date") from err
 
         self.maintainer = _check_field_string(variables, 'maintainer')
         self.image = _check_field_string(variables, 'image', '')
@@ -316,8 +320,7 @@ class PackageAdapter(logging.LoggerAdapter):
         ), kwargs
 
 
-# pylint: disable=too-many-instance-attributes
-class Package:
+class Package: # pylint:disable=too-many-instance-attributes
     """Load and execute a package from a recipe."""
     def __init__(self, name: str, parent: Recipe, source: str):
         """
@@ -479,7 +482,7 @@ fi
         else:
             self.logger.debug('(none)')
 
-        epoch = self.parent.timestamp.timestamp()
+        epoch = int(self.parent.timestamp.timestamp())
 
         with open(ar_path, 'wb') as file:
             ipk.make_ipk(

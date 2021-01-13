@@ -51,8 +51,7 @@ declare -p
 '''
     env: Dict[str, str] = {}
 
-    # pylint: disable=subprocess-run-check
-    declarations_subshell = subprocess.run(
+    declarations_subshell = subprocess.run( # pylint:disable=subprocess-run-check
         ['/usr/bin/env', 'bash'],
         input=src.encode(),
         capture_output=True,
