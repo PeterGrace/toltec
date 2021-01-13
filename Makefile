@@ -60,7 +60,7 @@ $(RECIPES): %:
 
 $(RECIPES_PUSH): %:
 	ssh root@"$(HOST)" mkdir -p .cache/opkg
-	scp build/package/"$(@:%-push=%)"/*/*.ipk root@"$(HOST)":.cache/opkg
+	scp build/package/"$(@:%-push=%)"/pkg/*.ipk root@"$(HOST)":.cache/opkg
 
 format:
 	@echo "==> Checking the formatting of shell scripts"
