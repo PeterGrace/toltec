@@ -56,7 +56,7 @@ repo-check:
 	./scripts/repo-check build/repo
 
 $(RECIPES): %:
-	./scripts/package-build package/"$(@)" build/package/"$(@)"
+	./scripts/package_build.py package/"$(@)" build/package/"$(@)"
 
 $(RECIPES_PUSH): %:
 	ssh root@"$(HOST)" mkdir -p .cache/opkg
