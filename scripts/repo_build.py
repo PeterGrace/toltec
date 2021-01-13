@@ -7,6 +7,7 @@
 import argparse
 import logging
 import sys
+import docker
 from toltec.repo import Repo
 from toltec.util import LOGGING_FORMAT
 
@@ -51,6 +52,10 @@ args = parser.parse_args()
 remote = args.remote_repo if not args.local else None
 logging.basicConfig(format=LOGGING_FORMAT, level=args.verbose)
 
+docker_client = docker.from_env()
 repo = Repo(args.recipes_dir, args.work_dir, args.repo_dir)
-repo.make_packages(remote, fetch_missing=not args.no_fetch)
+
+repo.make_packages(
+    remote, fetch_missing=not args.no_fetch,
+    docker=docker_client)
 repo.make_index()

@@ -18,7 +18,7 @@ class Version:
     See <https://www.debian.org/doc/debian-policy/ch-controlfields.html#s-f-version>
     for details about the format and the comparison rules.
     """
-    def __init__(self, upstream: str, revision: str = '0', epoch: int = 0):
+    def __init__(self, epoch: int, upstream: str, revision: str):
         self.upstream = upstream
         self.revision = revision
         self.epoch = epoch
@@ -34,6 +34,7 @@ class Version:
     @classmethod
     def parse(cls, version: str):
         """Parse a version number."""
+        original = version
         colon = version.find(':')
 
         if colon == -1:
@@ -52,8 +53,8 @@ class Version:
 
         upstream = version
 
-        result = Version(upstream, revision, epoch)
-        result._original = version
+        result = Version(epoch, upstream, revision)
+        result._original = original
         return result
 
     def __str__(self):

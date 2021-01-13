@@ -10,8 +10,8 @@ import gzip
 import logging
 import os
 import shutil
-import subprocess
 from typing import Dict, List, Optional
+from docker.client import DockerClient
 import requests
 from .recipe import Recipe, Package
 from .util import file_sha256, HTTP_DATE_FORMAT
@@ -43,14 +43,21 @@ class Repo:
                 self.recipes[name] = Recipe.from_file(name,
                     os.path.join(recipes_dir, name))
 
-    def make_packages(self, remote: Optional[str], fetch_missing: bool) -> None:
-        """Fetch missing packages and build new packages."""
+    def make_packages(
+            self, remote: Optional[str], fetch_missing: bool,
+            docker: DockerClient) -> None:
+        """
+        Fetch missing packages and build new packages.
+
+        :param remote: remote server from which to check for existing packages
+        :param fetch_missing: pass true to fetch missing packages from remote
+        :param docker: docker client to use for running the builds
+        """
+        logger.info('Scanning for missing packages')
         missing: Dict[str, List[Package]] = {}
-        logger.info('Building a local repository')
 
         for recipe in self.recipes.values():
             missing[recipe.name] = []
-            logger.info('Processing recipe %s', recipe.name)
 
             for package in recipe.packages.values():
                 filename = package.filename()
@@ -66,8 +73,6 @@ class Repo:
                         req = requests.get(remote_path)
 
                         if req.status_code == 200:
-                            logger.info('Found %s on remote repo', package.name)
-
                             with open(local_path, 'wb') as local:
                                 for chunk in req.iter_content(chunk_size=1024):
                                     local.write(chunk)
@@ -83,25 +88,32 @@ class Repo:
                         if req.status_code == 200:
                             continue
 
-                missing[recipe.name].append(package)
+                logger.info('Package %s (%s) is missing',
+                    package.pkgid(), recipe.name)
+                missing[recipe.name].append(package.name)
 
-        # Build missing packages
+        logger.info('Building missing packages')
+
         for recipe_name, packages in missing.items():
             if packages:
-                logger.info('Building missing package(s): %s', packages)
-                subprocess.run([
-                    'scripts/package-build',
-                    os.path.join(self.recipes_dir, recipe_name),
-                    os.path.join(self.work_dir, recipe_name),
-                    *[package.name for package in packages]
-                ], check=True)
+                recipe = self.recipes[recipe_name]
 
-                for package in packages:
+                recipe_work_dir = os.path.join(self.work_dir, recipe_name)
+                os.makedirs(recipe_work_dir, exist_ok=True)
+
+                src_dir = os.path.join(recipe_work_dir, 'src')
+                os.makedirs(src_dir, exist_ok=True)
+
+                pkg_dir = os.path.join(recipe_work_dir, 'pkg')
+                os.makedirs(pkg_dir, exist_ok=True)
+
+                recipe.make(src_dir, pkg_dir, docker, packages)
+
+                for package_name in packages:
+                    package = recipe.packages[package_name]
                     filename = package.filename()
                     shutil.copy2(
-                        os.path.join(
-                            self.work_dir, recipe_name,
-                            package.name, filename),
+                        os.path.join(pkg_dir, filename),
                         self.repo_dir)
 
     def make_index(self) -> None:

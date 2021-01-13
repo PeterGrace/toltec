@@ -75,7 +75,6 @@ class Recipe:
 
         self.name = name
         self.root = root
-        self.logger = RecipeAdapter(logger, {'recipe': name})
         self._bash_variables = variables
         self._bash_functions = functions
 
@@ -128,6 +127,8 @@ which has a build() step')
 
                 self.packages[pkg_name] = Package(pkg_name, self,
                     functions[pkg_name])
+
+        self.logger = RecipeAdapter(logger, {'recipe': name})
 
 
     @classmethod
@@ -334,16 +335,13 @@ class Package:
         functions = {**parent._bash_functions, **functions}
 
         self.name = name
-        self.logger = PackageAdapter(logger, {
-            'recipe': parent.name,
-            'package': name})
         self.parent = parent
         self._bash_variables = variables
         self._bash_functions = functions
 
         # Parse and check package metadata
         pkgver_str = _check_field_string(variables, 'pkgver')
-        self.pkgver = version.Version(pkgver_str)
+        self.pkgver = version.Version.parse(pkgver_str)
 
         self.arch = _check_field_string(variables, 'arch', 'armv7-3.2')
         self.pkgdesc = _check_field_string(variables, 'pkgdesc')
@@ -365,6 +363,10 @@ for package {self.name}')
 
         for rel, step in product(('pre', 'post'), ('remove', 'upgrade')):
             self.install[rel + step] = functions.get(rel + step, '')
+
+        self.logger = PackageAdapter(logger, {
+            'recipe': parent.name,
+            'package': self.pkgid()})
 
     def pkgid(self) -> str:
         """Get the unique identifier of this package."""
@@ -477,13 +479,16 @@ fi
         else:
             self.logger.debug('(none)')
 
+        epoch = self.parent.timestamp.timestamp()
+
         with open(ar_path, 'wb') as file:
             ipk.make_ipk(
-                file,
-                epoch=self.parent.timestamp.timestamp(),
-                pkg_dir=pkg_dir,
+                file, epoch=epoch, pkg_dir=pkg_dir,
                 metadata=self.control_fields(),
                 scripts=scripts)
+
+        # Set fixed mtime for the resulting archive
+        os.utime(ar_path, (epoch, epoch))
 
 
 # Helpers to check that fields of the right type are defined in a recipe
