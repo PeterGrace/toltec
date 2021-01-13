@@ -17,21 +17,31 @@ import logging
 import os
 import re
 import shutil
+import dateutil.parser
 from docker.client import DockerClient
 from docker.types import Mount
 import requests
-from . import bash, util, ipk
+from . import bash, util, ipk, version
 
 logger = logging.getLogger(__name__)
 
 # Detect non-local paths
-URL_REGEX = re.compile(r'[a-z]+://')
+_URL_REGEX = re.compile(r'[a-z]+://')
 
 # Prefix for all Toltec Docker images
-IMAGE_PREFIX = 'ghcr.io/toltec-dev/'
+_IMAGE_PREFIX = 'ghcr.io/toltec-dev/'
 
 # Toltec Docker image used for generic tasks
-DEFAULT_IMAGE = 'base:v1.2.2'
+_DEFAULT_IMAGE = 'base:v1.2.2'
+
+# Path and contents of the Bash library for install scripts
+_INSTALL_LIB_PATH = os.path.join(os.path.dirname(__file__), '..', 'install-lib')
+_INSTALL_LIB = ''
+
+with open(_INSTALL_LIB_PATH, 'r') as file:
+    for line in file:
+        if not line.strip().startswith('#'):
+            _INSTALL_LIB += line
 
 
 class InvalidRecipeError(Exception):
@@ -71,7 +81,14 @@ class Recipe:
 
         # Parse and check recipe metadata
         self.pkgnames = _check_field_indexed(variables, 'pkgnames')
-        self.timestamp = _check_field_string(variables, 'timestamp')
+        timestamp_str = _check_field_string(variables, 'timestamp')
+
+        try:
+            self.timestamp = dateutil.parser.isoparse(timestamp_str)
+        except ValueError:
+            raise InvalidRecipeError("Field 'timestamp' does not contain a \
+valid ISO-8601 date")
+
         self.maintainer = _check_field_string(variables, 'maintainer')
         self.image = _check_field_string(variables, 'image', '')
         self.source = _check_field_indexed(variables, 'source', [])
@@ -118,10 +135,6 @@ which has a build() step')
         """Load a recipe from a file."""
         with open(os.path.join(root, 'package'), 'r') as recipe:
             return Recipe(name, root, recipe.read())
-
-    def control_fields(self) -> str:
-        """Get the recipe-wide control fields."""
-        return f"Maintainer: {self.maintainer}\n"
 
     def make(
             self, src_dir: str, pkg_dir: str, docker: DockerClient,
@@ -178,7 +191,7 @@ recipe {self.name}')
             filename = os.path.basename(source)
             local_path = os.path.join(src_dir, filename)
 
-            if URL_REGEX.match(source) is None:
+            if _URL_REGEX.match(source) is None:
                 # Get source file from the recipe’s root
                 shutil.copy2(os.path.join(self.root, source), local_path)
             else:
@@ -243,7 +256,7 @@ source file '{source}', got {req.status_code}")
         uid = os.getuid()
 
         logs = bash.run_script_in_container(
-            docker, image=IMAGE_PREFIX + self.image,
+            docker, image=_IMAGE_PREFIX + self.image,
             mounts=[Mount(
                 type='bind',
                 source=os.path.abspath(src_dir),
@@ -273,7 +286,7 @@ source file '{source}', got {req.status_code}")
         mount_src = '/src'
 
         logs = bash.run_script_in_container(
-            docker, image=IMAGE_PREFIX + DEFAULT_IMAGE,
+            docker, image=_IMAGE_PREFIX + _DEFAULT_IMAGE,
             mounts=[Mount(
                 type='bind',
                 source=os.path.abspath(src_dir),
@@ -329,7 +342,9 @@ class Package:
         self._bash_functions = functions
 
         # Parse and check package metadata
-        self.pkgver = _check_field_string(variables, 'pkgver')
+        pkgver_str = _check_field_string(variables, 'pkgver')
+        self.pkgver = version.Version(pkgver_str)
+
         self.arch = _check_field_string(variables, 'arch', 'armv7-3.2')
         self.pkgdesc = _check_field_string(variables, 'pkgdesc')
         self.url = _check_field_string(variables, 'url')
@@ -345,21 +360,25 @@ for package {self.name}')
         self.action = functions['package']
         self.install = {}
 
+        for action in ('preinstall', 'configure'):
+            self.install[action] = functions.get(action, '')
+
         for rel, step in product(('pre', 'post'), ('remove', 'upgrade')):
             self.install[rel + step] = functions.get(rel + step, '')
 
     def pkgid(self) -> str:
         """Get the unique identifier of this package."""
-        return '_'.join((self.name, self.pkgver, self.arch))
+        return '_'.join((self.name, str(self.pkgver), self.arch))
 
     def filename(self) -> str:
         """Get the name of the archive corresponding to this package."""
         return self.pkgid() + '.ipk'
 
     def control_fields(self) -> str:
-        """Get the package-specific control fields."""
+        """Get the control fields for this package."""
         control = f'''Package: {self.name}
 Version: {self.pkgver}
+Maintainer: {self.parent.maintainer}
 Section: {self.section}
 Architecture: {self.arch}
 Description: {self.pkgdesc}
@@ -417,11 +436,54 @@ License: {self.license}
         self.logger.info('Creating archive')
         ar_path = os.path.join(ar_dir, self.filename())
 
+        # Convert install scripts to Debian format
+        scripts = {}
+        script_header = f'''\
+#!/usr/bin/env bash
+set -e
+{bash.put_variables(self._bash_variables)}
+{_INSTALL_LIB}
+'''
+
+        for name, script, action in (
+                ('preinstall', 'preinst', 'install'),
+                ('configure', 'postinst', 'configure')):
+            if self.install[name]:
+                scripts[script] = f'''\
+{script_header}
+if [[ $1 = {action} ]]; then
+    {self.install[name]}
+fi
+'''
+        for step in ('pre', 'post'):
+            if self.install[step + 'upgrade'] or self.install[step + 'remove']:
+                script = script_header
+
+                for action in ('upgrade', 'remove'):
+                    if self.install[step + action]:
+                        script += f'''\
+if [[ $1 = {action} ]]; then
+    {self.install[step + action]}
+fi
+'''
+
+                scripts[step + 'rm'] = script
+
+        self.logger.debug('Install scripts:')
+
+        if scripts:
+            for script in scripts:
+                self.logger.debug(' - %s', script)
+        else:
+            self.logger.debug('(none)')
+
         with open(ar_path, 'wb') as file:
             ipk.make_ipk(
-                file, 0, pkg_dir,
-                metadata=self.control_fields() + self.parent.control_fields(),
-                scripts={})
+                file,
+                epoch=self.parent.timestamp.timestamp(),
+                pkg_dir=pkg_dir,
+                metadata=self.control_fields(),
+                scripts=scripts)
 
 
 # Helpers to check that fields of the right type are defined in a recipe
@@ -450,13 +512,13 @@ def _check_field_indexed(
 ) -> bash.IndexedArray:
     if name not in variables:
         if default is None:
-            raise InvalidRecipeError(f'Missing required field {name}')
+            raise InvalidRecipeError(f"Missing required field '{name}'")
         return default
 
     value = variables[name]
 
     if not isinstance(value, list):
-        raise InvalidRecipeError(f"Field {name} must be an indexed array, \
+        raise InvalidRecipeError(f"Field '{name}' must be an indexed array, \
 got {type(variables[name]).__name__}")
 
     return value

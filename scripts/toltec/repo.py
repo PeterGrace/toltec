@@ -121,7 +121,6 @@ class Repo:
                             continue
 
                         control = package.control_fields()
-                        control += recipe.control_fields()
                         control += f'''Filename: {filename}
 SHA256sum: {file_sha256(local_path)}
 Size: {os.path.getsize(local_path)}
