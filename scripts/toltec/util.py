@@ -9,8 +9,9 @@ import itertools
 import os
 import shutil
 import sys
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, IO, List, Optional
 import zipfile
+import tarfile
 
 # Date format used in HTTP headers such as Last-Modified
 HTTP_DATE_FORMAT = "%a, %d %b %Y %H:%M:%S %Z"
@@ -82,29 +83,65 @@ def auto_extract(archive_path: str, dest_path: str) -> bool:
     :param dest_path: destination folder for the archive contents
     :returns: true if something was extracted, false if not a supported archive
     """
-    if archive_path[-4:] == '.zip':
-        with zipfile.ZipFile(archive_path) as archive:
-            members = remove_prefix(archive.namelist())
+    if archive_path.endswith('.zip'):
+        with zipfile.ZipFile(archive_path) as zip_archive:
+            _auto_extract(
+                zip_archive.namelist(),
+                zip_archive.getinfo,
+                zip_archive.open,
+                lambda member: member.is_dir(),
+                lambda member: member.external_attr >> 16 & 0x1FF,
+                dest_path)
+        return True
 
-            for filename, stripped in members.items():
-                member = archive.getinfo(filename)
-                file_path = os.path.join(dest_path, stripped)
-
-                if member.is_dir():
-                    os.makedirs(file_path, exist_ok=True)
-                else:
-                    with archive.open(member) as source, \
-                            open(file_path, 'wb') as target:
-                        shutil.copyfileobj(source, target)
-
-                    # Restore file permissions if specified in the archive
-                    mode = member.external_attr >> 16 & 0x1FF
-                    if mode != 0:
-                        os.chmod(file_path, mode)
-
+    if archive_path.endswith('.tar.gz'):
+        with tarfile.open(archive_path, mode='r:gz') as tar_archive:
+            _auto_extract(
+                tar_archive.getnames(),
+                tar_archive.getmember,
+                tar_archive.extractfile,
+                lambda member: member.isdir(),
+                lambda member: member.mode,
+                dest_path)
         return True
 
     return False
+
+def _auto_extract( # pylint:disable=too-many-arguments
+        members: List[str],
+        getinfo: Callable[[str], Any],
+        extract: Callable[[Any], Optional[IO[bytes]]],
+        isdir: Callable[[Any], bool],
+        getmode: Callable[[Any], int],
+        dest_path: str) -> None:
+    """
+    Generic implementation of automatic archive extraction.
+
+    :param members: list of members of the archive
+    :param getinfo: get an entry object from an entry name in the archive
+    :param extract: get a reading stream corresponding to an archive entry
+    :param isdir: get whether an entry is a directory or not
+    :param getmode: get the permission bits for an entry
+    :param destpath: destinatio folder for the archive contents
+    """
+    stripped_map = remove_prefix(members)
+
+    for filename, stripped in stripped_map.items():
+        member = getinfo(filename)
+        file_path = os.path.join(dest_path, stripped)
+
+        if isdir(member):
+            os.makedirs(file_path, exist_ok=True)
+        else:
+            source = extract(member)
+            assert source is not None
+
+            with source, open(file_path, 'wb') as target:
+                shutil.copyfileobj(source, target)
+
+            mode = getmode(member)
+            if mode != 0:
+                os.chmod(file_path, mode)
 
 def query_user(
         question: str,
