@@ -20,7 +20,9 @@ def _targz_open(fileobj: IO[bytes], epoch: int) -> tarfile.TarFile:
         fileobj=fileobj, mtime=epoch)
 
     try:
-        archive = tarfile.TarFile(mode='w', fileobj=gzipobj)
+        archive = tarfile.TarFile(
+            mode='w', fileobj=gzipobj, # type:ignore
+            format=tarfile.GNU_FORMAT)
     except:
         gzipobj.close()
         raise
