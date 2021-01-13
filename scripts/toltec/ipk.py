@@ -3,9 +3,30 @@
 
 """Make ipk packages."""
 
+from gzip import GzipFile
 from typing import Dict
 from io import IOBase, BytesIO
 import tarfile
+
+def targzopen(fileobj: IOBase, epoch: int):
+    """
+    Open a gzip compressed tar archive for writing.
+
+    Modified from :func:`tarfile.TarFile.gzopen` to support
+    setting the `mtime` attribute on `GzipFile`.
+    """
+    gzipobj = GzipFile(
+        filename='', mode='wb', compresslevel=9,
+        fileobj=fileobj, mtime=epoch)
+
+    try:
+        archive = tarfile.TarFile(mode='w', fileobj=gzipobj)
+    except:
+        gzipobj.close()
+        raise
+
+    archive._extfileobj = False
+    return archive
 
 def _clean_info(root: str, epoch: int, info: tarfile.TarInfo) \
         -> tarfile.TarInfo:
@@ -56,7 +77,7 @@ def make_control(
     :param metadata: package metadata (main control file)
     :param scripts: optional maintainer scripts
     """
-    with tarfile.open(mode='w:gz', fileobj=file) as archive:
+    with targzopen(file, epoch) as archive:
         _add_file(archive, 'control', 0o644, epoch, metadata.encode())
 
         for name, script in scripts.items():
@@ -73,7 +94,7 @@ def make_data(
     :param epoch: fixed modification time to set
     :param pkg_dir: directory in which the package tree exists
     """
-    with tarfile.open(mode='w:gz', fileobj=file) as archive:
+    with targzopen(file, epoch) as archive:
         archive.add(pkg_dir, filter=lambda info: \
             _clean_info(pkg_dir, epoch, info))
 
@@ -93,7 +114,7 @@ def make_ipk(
     :param scripts: optional maintainer scripts
     """
     with BytesIO() as control, BytesIO() as data, \
-            tarfile.open(mode='w:gz', fileobj=file) as archive:
+            targzopen(file, epoch) as archive:
         make_control(control, epoch, metadata, scripts)
         _add_file(archive, 'control.tar.gz', 0o644, epoch, control.getvalue())
 
