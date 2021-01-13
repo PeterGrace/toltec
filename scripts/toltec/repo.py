@@ -1,6 +1,5 @@
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
-
 """
 Build the package repository.
 """
@@ -40,8 +39,8 @@ class Repo:
 
         for name in os.listdir(recipes_dir):
             if name[0] != '.':
-                self.recipes[name] = Recipe.from_file(name,
-                    os.path.join(recipes_dir, name))
+                self.recipes[name] = Recipe.from_file(
+                    name, os.path.join(recipes_dir, name))
 
     def fetch_packages(self, remote: Optional[str], fetch_missing: bool) \
             -> Dict[str, List[str]]:
@@ -76,26 +75,27 @@ class Repo:
                                 for chunk in req.iter_content(chunk_size=1024):
                                     local.write(chunk)
 
-                            last_modified = int(datetime.strptime(
-                                req.headers['Last-Modified'],
-                                HTTP_DATE_FORMAT).timestamp())
+                            last_modified = int(
+                                datetime.strptime(
+                                    req.headers['Last-Modified'],
+                                    HTTP_DATE_FORMAT).timestamp())
 
-                            os.utime(local_path, (last_modified, last_modified))
+                            os.utime(local_path,
+                                     (last_modified, last_modified))
                             continue
                     else:
                         req = requests.head(remote_path)
                         if req.status_code == 200:
                             continue
 
-                logger.info('Package %s (%s) is missing',
-                    package.pkgid(), recipe.name)
+                logger.info('Package %s (%s) is missing', package.pkgid(),
+                            recipe.name)
                 missing[recipe.name].append(package.name)
 
         return missing
 
-    def make_packages(
-            self, packages_by_recipe: Dict[str, List[str]],
-            docker: DockerClient) -> None:
+    def make_packages(self, packages_by_recipe: Dict[str, List[str]],
+                      docker: DockerClient) -> None:
         """
         Build packages and move them to the repo.
 
@@ -122,9 +122,8 @@ class Repo:
                 for package_name in packages:
                     package = recipe.packages[package_name]
                     filename = package.filename()
-                    shutil.copy2(
-                        os.path.join(pkg_dir, filename),
-                        self.repo_dir)
+                    shutil.copy2(os.path.join(pkg_dir, filename),
+                                 self.repo_dir)
 
     def make_index(self) -> None:
         """Generate index files for all the packages in the repo."""

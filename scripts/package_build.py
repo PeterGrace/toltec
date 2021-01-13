@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
-
 """Build packages from a given recipe."""
 
 import argparse
@@ -11,26 +10,25 @@ import shutil
 import sys
 import docker
 from toltec.recipe import Recipe
-from toltec.util import LOGGING_FORMAT, query_user
+from toltec.util import argparse_add_verbose, LOGGING_FORMAT, query_user
 
 parser = argparse.ArgumentParser(description=sys.modules[__name__].__doc__)
 
-parser.add_argument(
-    'recipe_dir', metavar='RECIPEDIR',
-    help='directory where the recipe definition lives')
+parser.add_argument('recipe_dir',
+                    metavar='RECIPEDIR',
+                    help='directory where the recipe definition lives')
+
+parser.add_argument('work_dir',
+                    metavar='WORKDIR',
+                    help='directory where the recipe will be built')
 
 parser.add_argument(
-    'work_dir', metavar='WORKDIR',
-    help='directory where the recipe will be built')
-
-parser.add_argument(
-    'packages_names', nargs='*', metavar='PACKAGENAME',
+    'packages_names',
+    nargs='*',
+    metavar='PACKAGENAME',
     help='list of packages to build (default: all packages from the recipe)')
 
-parser.add_argument(
-    '-v', '--verbose', action='store_const',
-    const=logging.DEBUG, default=logging.INFO,
-    help='show debugging information')
+argparse_add_verbose(parser)
 
 args = parser.parse_args()
 logging.basicConfig(format=LOGGING_FORMAT, level=args.verbose)
@@ -65,7 +63,7 @@ os.makedirs(src_dir, exist_ok=True)
 pkg_dir = os.path.join(args.work_dir, 'pkg')
 os.makedirs(pkg_dir, exist_ok=True)
 
-recipe.make(
-    src_dir=src_dir, pkg_dir=pkg_dir,
-    docker=docker_client,
-    packages=args.packages_names if args.packages_names else None)
+recipe.make(src_dir=src_dir,
+            pkg_dir=pkg_dir,
+            docker=docker_client,
+            packages=args.packages_names if args.packages_names else None)

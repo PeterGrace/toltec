@@ -1,6 +1,5 @@
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
-
 """Work with Debian-style package versions."""
 
 import re
@@ -9,8 +8,10 @@ from typing import Optional
 # Characters permitted in the upstream version part of a version number
 _VERSION_CHARS = re.compile('^[A-Za-z0-9.+~-]+$')
 
+
 class InvalidVersionError(Exception):
     """Raised when construction of an invalid version is attempted."""
+
 
 class Version:
     """
@@ -55,7 +56,7 @@ class Version:
         upstream = version
 
         result = Version(epoch, upstream, revision)
-        result._original = original # pylint:disable=protected-access
+        result._original = original  # pylint:disable=protected-access
         return result
 
     def __str__(self):

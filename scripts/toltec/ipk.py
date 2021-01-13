@@ -1,12 +1,12 @@
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
-
 """Make ipk packages."""
 
 from gzip import GzipFile
 from typing import Dict, IO
 from io import BytesIO
 import tarfile
+
 
 def _targz_open(fileobj: IO[bytes], epoch: int) -> tarfile.TarFile:
     """
@@ -15,19 +15,22 @@ def _targz_open(fileobj: IO[bytes], epoch: int) -> tarfile.TarFile:
     Modified from :func:`tarfile.TarFile.gzopen` to support
     setting the `mtime` attribute on `GzipFile`.
     """
-    gzipobj = GzipFile(
-        filename='', mode='wb', compresslevel=9,
-        fileobj=fileobj, mtime=epoch)
+    gzipobj = GzipFile(filename='',
+                       mode='wb',
+                       compresslevel=9,
+                       fileobj=fileobj,
+                       mtime=epoch)
 
     try:
         archive = tarfile.TarFile(
-            mode='w', fileobj=gzipobj, # type:ignore
+            mode='w',
+            fileobj=gzipobj,  # type:ignore
             format=tarfile.GNU_FORMAT)
     except:
         gzipobj.close()
         raise
 
-    archive._extfileobj = False # type:ignore # pylint:disable=protected-access
+    archive._extfileobj = False  # type:ignore # pylint:disable=protected-access
     return archive
 
 def _clean_info(root: str, epoch: int, info: tarfile.TarInfo) \
@@ -48,9 +51,9 @@ def _clean_info(root: str, epoch: int, info: tarfile.TarInfo) \
     info.mtime = epoch
     return info
 
-def _add_file(
-        archive: tarfile.TarFile,
-        name: str, mode: int, epoch: int, data: bytes) -> None:
+
+def _add_file(archive: tarfile.TarFile, name: str, mode: int, epoch: int,
+              data: bytes) -> None:
     """
     Add an in-memory file into a tar archive.
 
@@ -65,9 +68,9 @@ def _add_file(
     info.mode = mode
     archive.addfile(_clean_info('.', epoch, info), BytesIO(data))
 
-def make_control(
-        file: IO[bytes], epoch: int,
-        metadata: str, scripts: Dict[str, str]):
+
+def make_control(file: IO[bytes], epoch: int, metadata: str,
+                 scripts: Dict[str, str]) -> None:
     """
     Create the control sub-archive.
 
@@ -85,10 +88,8 @@ def make_control(
         for name, script in scripts.items():
             _add_file(archive, name, 0o755, epoch, script.encode())
 
-def make_data(
-        file: IO[bytes],
-        epoch: int,
-        pkg_dir: str) -> None:
+
+def make_data(file: IO[bytes], epoch: int, pkg_dir: str) -> None:
     """
     Create the data sub-archive.
 
@@ -100,12 +101,9 @@ def make_data(
         archive.add(pkg_dir, filter=lambda info: \
             _clean_info(pkg_dir, epoch, info))
 
-def make_ipk(
-        file: IO[bytes],
-        epoch: int,
-        pkg_dir: str,
-        metadata: str,
-        scripts: Dict[str, str]) -> None:
+
+def make_ipk(file: IO[bytes], epoch: int, pkg_dir: str, metadata: str,
+             scripts: Dict[str, str]) -> None:
     """
     Create an ipk package.
 

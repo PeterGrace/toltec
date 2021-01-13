@@ -1,6 +1,5 @@
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
-
 """
 Load and execute recipes.
 
@@ -34,6 +33,7 @@ _IMAGE_PREFIX = 'ghcr.io/toltec-dev/'
 # Toltec Docker image used for generic tasks
 _DEFAULT_IMAGE = 'base:v1.2.2'
 
+
 # Contents of the Bash library for install scripts
 def _read_bash_lib(path):
     result = ''
@@ -45,8 +45,9 @@ def _read_bash_lib(path):
 
     return result
 
-_INSTALL_LIB = _read_bash_lib(os.path.join(
-    os.path.dirname(__file__), '..', 'install-lib'))
+
+_INSTALL_LIB = _read_bash_lib(
+    os.path.join(os.path.dirname(__file__), '..', 'install-lib'))
 
 
 class InvalidRecipeError(Exception):
@@ -63,7 +64,7 @@ class RecipeAdapter(logging.LoggerAdapter):
         return '%s: %s' % (self.extra['recipe'], msg), kwargs
 
 
-class Recipe: # pylint:disable=too-many-instance-attributes
+class Recipe:  # pylint:disable=too-many-instance-attributes
     """Load and execute recipes."""
     def __init__(self, name: str, root: str, source: str):
         """
@@ -130,10 +131,9 @@ which has a build() step')
 {pkg_name}() for corresponding package')
 
                 self.packages[pkg_name] = Package(pkg_name, self,
-                    functions[pkg_name])
+                                                  functions[pkg_name])
 
         self.logger = RecipeAdapter(logger, {'recipe': name})
-
 
     @classmethod
     def from_file(cls, name: str, root: str) -> 'Recipe':
@@ -141,9 +141,11 @@ which has a build() step')
         with open(os.path.join(root, 'package'), 'r') as recipe:
             return Recipe(name, root, recipe.read())
 
-    def make(
-            self, src_dir: str, pkg_dir: str, docker: DockerClient,
-            packages: Optional[Iterable[str]] = None) -> None:
+    def make(self,
+             src_dir: str,
+             pkg_dir: str,
+             docker: DockerClient,
+             packages: Optional[Iterable[str]] = None) -> None:
         """
         Make this recipe.
 
@@ -234,9 +236,10 @@ source file '{source}', got {req.status_code}")
 
         self.logger.info('Preparing source files')
 
-        logs = bash.run_script(
-            variables={**self._bash_variables, 'srcdir': src_dir},
-            script=self.actions['prepare'])
+        logs = bash.run_script(script=self.actions['prepare'],
+                               variables={
+                                   **self._bash_variables, 'srcdir': src_dir
+                               })
 
         for line in logs:
             self.logger.debug(line)
@@ -261,12 +264,16 @@ source file '{source}', got {req.status_code}")
         uid = os.getuid()
 
         logs = bash.run_script_in_container(
-            docker, image=_IMAGE_PREFIX + self.image,
-            mounts=[Mount(
-                type='bind',
-                source=os.path.abspath(src_dir),
-                target=mount_src)],
-            variables={**self._bash_variables, 'srcdir': mount_src},
+            docker,
+            image=_IMAGE_PREFIX + self.image,
+            mounts=[
+                Mount(type='bind',
+                      source=os.path.abspath(src_dir),
+                      target=mount_src)
+            ],
+            variables={
+                **self._bash_variables, 'srcdir': mount_src
+            },
             script='\n'.join((
                 f'cd "{mount_src}"',
                 self.actions['build'],
@@ -291,11 +298,13 @@ source file '{source}', got {req.status_code}")
         mount_src = '/src'
 
         logs = bash.run_script_in_container(
-            docker, image=_IMAGE_PREFIX + _DEFAULT_IMAGE,
-            mounts=[Mount(
-                type='bind',
-                source=os.path.abspath(src_dir),
-                target=mount_src)],
+            docker,
+            image=_IMAGE_PREFIX + _DEFAULT_IMAGE,
+            mounts=[
+                Mount(type='bind',
+                      source=os.path.abspath(src_dir),
+                      target=mount_src)
+            ],
             variables={},
             script='\n'.join((
                 # Strip binaries in the target arch
@@ -313,14 +322,11 @@ source file '{source}', got {req.status_code}")
 class PackageAdapter(logging.LoggerAdapter):
     """Prefix log entries with the current package name."""
     def process(self, msg, kwargs):
-        return '%s (%s): %s' % (
-            self.extra['package'],
-            self.extra['recipe'],
-            msg
-        ), kwargs
+        return '%s (%s): %s' % (self.extra['package'], self.extra['recipe'],
+                                msg), kwargs
 
 
-class Package: # pylint:disable=too-many-instance-attributes
+class Package:  # pylint:disable=too-many-instance-attributes
     """Load and execute a package from a recipe."""
     def __init__(self, name: str, parent: Recipe, source: str):
         """
@@ -369,7 +375,8 @@ for package {self.name}')
 
         self.logger = PackageAdapter(logger, {
             'recipe': parent.name,
-            'package': self.pkgid()})
+            'package': self.pkgid()
+        })
 
     def pkgid(self) -> str:
         """Get the unique identifier of this package."""
@@ -415,12 +422,11 @@ License: {self.license}
         """
         self.logger.info('Packaging build artifacts')
 
-        logs = bash.run_script(
-            variables={
-                **self._bash_variables,
-                'srcdir': src_dir,
-                'pkgdir': pkg_dir},
-            script=self.action)
+        logs = bash.run_script(script=self.action,
+                               variables={
+                                   **self._bash_variables, 'srcdir': src_dir,
+                                   'pkgdir': pkg_dir
+                               })
 
         for line in logs:
             self.logger.debug(line)
@@ -443,7 +449,9 @@ License: {self.license}
 
         # Convert install scripts to Debian format
         scripts = {}
-        variables = {**self._bash_variables, 'pkgname': self.name}
+        variables: bash.Variables = {
+            **self._bash_variables, 'pkgname': self.name
+        }
         script_header = f'''\
 #!/usr/bin/env bash
 set -e
@@ -451,9 +459,8 @@ set -e
 {_INSTALL_LIB}
 '''
 
-        for name, script, action in (
-                ('preinstall', 'preinst', 'install'),
-                ('configure', 'postinst', 'configure')):
+        for name, script, action in (('preinstall', 'preinst', 'install'),
+                                     ('configure', 'postinst', 'configure')):
             if self.install[name]:
                 scripts[script] = f'''\
 {script_header}
@@ -492,10 +499,11 @@ fi
         epoch = int(self.parent.timestamp.timestamp())
 
         with open(ar_path, 'wb') as file:
-            ipk.make_ipk(
-                file, epoch=epoch, pkg_dir=pkg_dir,
-                metadata=self.control_fields(),
-                scripts=scripts)
+            ipk.make_ipk(file,
+                         epoch=epoch,
+                         pkg_dir=pkg_dir,
+                         metadata=self.control_fields(),
+                         scripts=scripts)
 
         # Set fixed mtime for the resulting archive
         os.utime(ar_path, (epoch, epoch))
@@ -503,10 +511,9 @@ fi
 
 # Helpers to check that fields of the right type are defined in a recipe
 # and to otherwise return a default value
-def _check_field_string(
-    variables: bash.Variables, name: str,
-    default: Optional[str] = None
-) -> str:
+def _check_field_string(variables: bash.Variables,
+                        name: str,
+                        default: Optional[str] = None) -> str:
     if name not in variables:
         if default is None:
             raise InvalidRecipeError(f'Missing required field {name}')
@@ -522,9 +529,9 @@ got {type(variables[name]).__name__}")
 
 
 def _check_field_indexed(
-    variables: bash.Variables, name: str,
-    default: Optional[bash.IndexedArray] = None
-) -> bash.IndexedArray:
+        variables: bash.Variables,
+        name: str,
+        default: Optional[bash.IndexedArray] = None) -> bash.IndexedArray:
     if name not in variables:
         if default is None:
             raise InvalidRecipeError(f"Missing required field '{name}'")

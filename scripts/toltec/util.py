@@ -1,10 +1,11 @@
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
-
 """Collection of useful functions."""
 
+import argparse
 from collections.abc import Iterable
 import hashlib
+import logging
 import itertools
 import os
 import shutil
@@ -19,6 +20,17 @@ HTTP_DATE_FORMAT = "%a, %d %b %Y %H:%M:%S %Z"
 # Logging format for build scripts
 LOGGING_FORMAT = '[%(levelname)8s] %(name)s: %(message)s'
 
+
+def argparse_add_verbose(parser: argparse.ArgumentParser):
+    """Add an option for setting the verbosity level."""
+    parser.add_argument('-v',
+                        '--verbose',
+                        action='store_const',
+                        const=logging.DEBUG,
+                        default=logging.INFO,
+                        help='show debugging information')
+
+
 def file_sha256(path: str) -> str:
     """Compute the SHA-256 checksum of a file."""
     sha256 = hashlib.sha256()
@@ -26,10 +38,11 @@ def file_sha256(path: str) -> str:
     view = memoryview(buffer)
 
     with open(path, 'rb', buffering=0) as file:
-        for length in iter(lambda: file.readinto(view), 0): # type:ignore
+        for length in iter(lambda: file.readinto(view), 0):  # type:ignore
             sha256.update(view[:length])
 
     return sha256.hexdigest()
+
 
 def split_all(path: str) -> List[str]:
     """Split a file path into all its directory components."""
@@ -44,12 +57,14 @@ def split_all(path: str) -> List[str]:
     parts.reverse()
     return parts
 
+
 def all_equal(seq: Iterable) -> bool:
     """Check that all elements of a sequence are equal."""
     grouped = itertools.groupby(seq)
     first = next(grouped, (None, grouped))
     second = next(grouped, None)
     return first and not second
+
 
 def remove_prefix(filenames: List[str]) -> Dict[str, str]:
     """Find and remove the longest directory prefix shared by all files."""
@@ -75,6 +90,7 @@ def remove_prefix(filenames: List[str]) -> Dict[str, str]:
 
     return mapping
 
+
 def auto_extract(archive_path: str, dest_path: str) -> bool:
     """
     Automatically extract an archive and strip useless components.
@@ -85,35 +101,28 @@ def auto_extract(archive_path: str, dest_path: str) -> bool:
     """
     if archive_path.endswith('.zip'):
         with zipfile.ZipFile(archive_path) as zip_archive:
-            _auto_extract(
-                zip_archive.namelist(),
-                zip_archive.getinfo,
-                zip_archive.open,
-                lambda member: member.is_dir(),
-                lambda member: member.external_attr >> 16 & 0x1FF,
-                dest_path)
+            _auto_extract(zip_archive.namelist(), zip_archive.getinfo,
+                          zip_archive.open, lambda member: member.is_dir(),
+                          lambda member: member.external_attr >> 16 & 0x1FF,
+                          dest_path)
         return True
 
     if archive_path.endswith('.tar.gz'):
         with tarfile.open(archive_path, mode='r:gz') as tar_archive:
-            _auto_extract(
-                tar_archive.getnames(),
-                tar_archive.getmember,
-                tar_archive.extractfile,
-                lambda member: member.isdir(),
-                lambda member: member.mode,
-                dest_path)
+            _auto_extract(tar_archive.getnames(), tar_archive.getmember,
+                          tar_archive.extractfile,
+                          lambda member: member.isdir(),
+                          lambda member: member.mode, dest_path)
         return True
 
     return False
 
-def _auto_extract( # pylint:disable=too-many-arguments
-        members: List[str],
-        getinfo: Callable[[str], Any],
-        extract: Callable[[Any], Optional[IO[bytes]]],
-        isdir: Callable[[Any], bool],
-        getmode: Callable[[Any], int],
-        dest_path: str) -> None:
+
+def _auto_extract(  # pylint:disable=too-many-arguments
+        members: List[str], getinfo: Callable[[str], Any],
+        extract: Callable[[Any], Optional[IO[bytes]]], isdir: Callable[[Any],
+                                                                       bool],
+        getmode: Callable[[Any], int], dest_path: str) -> None:
     """
     Generic implementation of automatic archive extraction.
 
@@ -143,11 +152,11 @@ def _auto_extract( # pylint:disable=too-many-arguments
             if mode != 0:
                 os.chmod(file_path, mode)
 
-def query_user(
-        question: str,
-        default: str,
-        options: Optional[List[str]] = None,
-        aliases: Optional[Dict[str, str]] = None):
+
+def query_user(question: str,
+               default: str,
+               options: Optional[List[str]] = None,
+               aliases: Optional[Dict[str, str]] = None):
     """
     Ask the user to make a choice.
 
@@ -163,9 +172,8 @@ def query_user(
     if default not in options:
         raise ValueError(f'Default value {default} is not a valid option')
 
-    prompt = '/'.join(
-        option if option != default else option.upper()
-        for option in options)
+    prompt = '/'.join(option if option != default else option.upper()
+                      for option in options)
 
     while True:
         sys.stdout.write(f'{question} [{prompt}] ')

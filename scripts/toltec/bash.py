@@ -1,6 +1,5 @@
 # Copyright (c) 2021 The Toltec Contributors
 # SPDX-License-Identifier: MIT
-
 """Bridge Bash with Python."""
 
 import shlex
@@ -23,16 +22,61 @@ class ScriptError(Exception):
 # from the result of `get_declarations()`. Subset of the list at:
 # <https://www.gnu.org/software/bash/manual/html_node/Bash-Variables.html>
 default_variables = {
-    'BASH', 'BASHOPTS', 'BASHPID', 'BASH_ALIASES', 'BASH_ARGC', 'BASH_ARGV',
-    'BASH_ARGV0', 'BASH_CMDS', 'BASH_COMMAND', 'BASH_LINENO', 'BASH_SOURCE',
-    'BASH_SUBSHELL', 'BASH_VERSINFO', 'BASH_VERSION', 'COLUMNS',
-    'COMP_WORDBREAKS', 'DIRSTACK', 'EPOCHREALTIME', 'EPOCHSECONDS', 'EUID',
-    'FUNCNAME', 'GROUPS', 'HISTCMD', 'HISTFILE', 'HISTFILESIZE', 'HISTSIZE',
-    'HOSTNAME', 'HOSTTYPE', 'IFS', 'LINENO', 'LINES', 'MACHTYPE', 'MAILCHECK',
-    'OLDPWD', 'OPTERR', 'OPTIND', 'OSTYPE', 'PATH', 'PIPESTATUS', 'PPID',
-    'PS1', 'PS2', 'PS4', 'PWD', 'RANDOM', 'SECONDS', 'SHELL', 'SHELLOPTS',
-    'SHLVL', 'SRANDOM', 'TERM', 'UID', '_',
+    'BASH',
+    'BASHOPTS',
+    'BASHPID',
+    'BASH_ALIASES',
+    'BASH_ARGC',
+    'BASH_ARGV',
+    'BASH_ARGV0',
+    'BASH_CMDS',
+    'BASH_COMMAND',
+    'BASH_LINENO',
+    'BASH_SOURCE',
+    'BASH_SUBSHELL',
+    'BASH_VERSINFO',
+    'BASH_VERSION',
+    'COLUMNS',
+    'COMP_WORDBREAKS',
+    'DIRSTACK',
+    'EPOCHREALTIME',
+    'EPOCHSECONDS',
+    'EUID',
+    'FUNCNAME',
+    'GROUPS',
+    'HISTCMD',
+    'HISTFILE',
+    'HISTFILESIZE',
+    'HISTSIZE',
+    'HOSTNAME',
+    'HOSTTYPE',
+    'IFS',
+    'LINENO',
+    'LINES',
+    'MACHTYPE',
+    'MAILCHECK',
+    'OLDPWD',
+    'OPTERR',
+    'OPTIND',
+    'OSTYPE',
+    'PATH',
+    'PIPESTATUS',
+    'PPID',
+    'PS1',
+    'PS2',
+    'PS4',
+    'PWD',
+    'RANDOM',
+    'SECONDS',
+    'SHELL',
+    'SHELLOPTS',
+    'SHLVL',
+    'SRANDOM',
+    'TERM',
+    'UID',
+    '_',
 }
+
 
 def get_declarations(src: str) -> Tuple[Variables, Functions]:
     """
@@ -51,7 +95,7 @@ declare -p
 '''
     env: Dict[str, str] = {}
 
-    declarations_subshell = subprocess.run( # pylint:disable=subprocess-run-check
+    declarations_subshell = subprocess.run(  # pylint:disable=subprocess-run-check
         ['/usr/bin/env', 'bash'],
         input=src.encode(),
         capture_output=True,
@@ -96,6 +140,7 @@ declare -p
 
     return variables, functions
 
+
 def put_variables(variables: Variables) -> str:
     """
     Generate a Bash script fragment which defines a set of variables.
@@ -120,13 +165,16 @@ def put_variables(variables: Variables) -> str:
 
     return result
 
+
 def _parse_string(token: str) -> str:
     """Remove escape sequences from a Bash string."""
     return token.replace('\\$', '$')
 
+
 def _generate_string(string: str) -> str:
     """Generate a Bash string."""
     return shlex.quote(string)
+
 
 def _parse_indexed(lexer: shlex.shlex) -> IndexedArray:
     """Parse an indexed Bash array."""
@@ -154,12 +202,13 @@ def _parse_indexed(lexer: shlex.shlex) -> IndexedArray:
 
     return result
 
+
 def _generate_indexed(array: IndexedArray) -> str:
     """Generate an indexed Bash array."""
-    return '(' + ' '.join(
-        f'[{index}]={_generate_string(value)}'
-        for index, value in enumerate(array)
-        if value is not None) + ')'
+    return '(' + ' '.join(f'[{index}]={_generate_string(value)}'
+                          for index, value in enumerate(array)
+                          if value is not None) + ')'
+
 
 def _parse_assoc(lexer: shlex.shlex) -> AssociativeArray:
     """Parse an associative Bash array."""
@@ -183,11 +232,13 @@ def _parse_assoc(lexer: shlex.shlex) -> AssociativeArray:
 
     return result
 
+
 def _generate_assoc(array: AssociativeArray) -> str:
     """Generate an associative Bash array."""
     return '(' + ' '.join(
         f'[{_generate_string(key)}]={_generate_string(value)}'
         for key, value in array.items()) + ')'
+
 
 def _parse_var(lexer: shlex.shlex) -> Tuple[str, Optional[Any]]:
     """Parse a variable declaration."""
@@ -214,6 +265,7 @@ def _parse_var(lexer: shlex.shlex) -> Tuple[str, Optional[Any]]:
 
     return var_name, var_value
 
+
 def _parse_func(lexer) -> Tuple[int, int]:
     """Find the starting and end bounds of a function declaration."""
     assert lexer.get_token() == '{'
@@ -233,6 +285,7 @@ def _parse_func(lexer) -> Tuple[int, int]:
     end_byte = lexer.instream.tell() - 1
     return start_byte, end_byte
 
+
 def run_script(variables: Variables, script: str):
     """
     Run a Bash script and stream its output.
@@ -242,11 +295,10 @@ def run_script(variables: Variables, script: str):
     :returns: generator yielding output lines from the script
     :raises ScriptError: if the script exits with a non-zero code
     """
-    process = subprocess.Popen(
-        ['/usr/bin/env', 'bash'],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT)
+    process = subprocess.Popen(['/usr/bin/env', 'bash'],
+                               stdin=subprocess.PIPE,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT)
 
     assert process.stdin is not None
     assert process.stdout is not None
@@ -261,9 +313,9 @@ def run_script(variables: Variables, script: str):
     if process.returncode != 0:
         raise ScriptError(f'Script exited with code {process.returncode}')
 
-def run_script_in_container(
-        docker: DockerClient, image: str,
-        mounts: List, variables: Variables, script: str):
+
+def run_script_in_container(docker: DockerClient, image: str, mounts: List,
+                            variables: Variables, script: str):
     """
     Run a Bash script inside a Docker container and stream its output.
 
@@ -275,14 +327,16 @@ def run_script_in_container(
     :returns: generator yielding output lines from the script
     :raises ScriptError: if the script exits with a non-zero code
     """
-    container = docker.containers.run(
-        image,
-        mounts=mounts,
-        command=[
-            '/usr/bin/env', 'bash', '-c',
-            put_variables(variables) + '\n' + script,
-        ],
-        detach=True)
+    container = docker.containers.run(image,
+                                      mounts=mounts,
+                                      command=[
+                                          '/usr/bin/env',
+                                          'bash',
+                                          '-c',
+                                          put_variables(variables) + '\n' +
+                                          script,
+                                      ],
+                                      detach=True)
 
     try:
         for line in container.logs(stream=True):
@@ -292,6 +346,7 @@ def run_script_in_container(
         result = container.wait()
 
         if result['StatusCode'] != 0:
-            raise ScriptError(f"Script exited with code {result['StatusCode']}")
+            raise ScriptError(
+                f"Script exited with code {result['StatusCode']}")
     finally:
         container.remove()
