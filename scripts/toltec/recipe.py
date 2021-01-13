@@ -457,9 +457,10 @@ set -e
                 scripts[script] = f'''\
 {script_header}
 if [[ $1 = {action} ]]; then
-    {{
+    fun() {{
     {self.install[name]}
     }}
+    fun
 fi
 '''
         for step in ('pre', 'post'):
@@ -470,9 +471,10 @@ fi
                     if self.install[step + action]:
                         script += f'''\
 if [[ $1 = {action} ]]; then
-    {{
+    fun() {{
     {self.install[step + action]}
     }}
+    fun
 fi
 '''
 
