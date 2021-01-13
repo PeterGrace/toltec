@@ -18,17 +18,19 @@ import tarfile
 HTTP_DATE_FORMAT = "%a, %d %b %Y %H:%M:%S %Z"
 
 # Logging format for build scripts
-LOGGING_FORMAT = '[%(levelname)8s] %(name)s: %(message)s'
+LOGGING_FORMAT = "[%(levelname)8s] %(name)s: %(message)s"
 
 
 def argparse_add_verbose(parser: argparse.ArgumentParser):
     """Add an option for setting the verbosity level."""
-    parser.add_argument('-v',
-                        '--verbose',
-                        action='store_const',
-                        const=logging.DEBUG,
-                        default=logging.INFO,
-                        help='show debugging information')
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_const",
+        const=logging.DEBUG,
+        default=logging.INFO,
+        help="show debugging information",
+    )
 
 
 def file_sha256(path: str) -> str:
@@ -37,7 +39,7 @@ def file_sha256(path: str) -> str:
     buffer = bytearray(128 * 1024)
     view = memoryview(buffer)
 
-    with open(path, 'rb', buffering=0) as file:
+    with open(path, "rb", buffering=0) as file:
         for length in iter(lambda: file.readinto(view), 0):  # type:ignore
             sha256.update(view[:length])
 
@@ -49,7 +51,7 @@ def split_all(path: str) -> List[str]:
     parts = []
     prefix = path
 
-    while prefix not in ('', '/'):
+    while prefix not in ("", "/"):
         prefix, base = os.path.split(prefix)
         if base:
             parts.append(base)
@@ -74,8 +76,9 @@ def remove_prefix(filenames: List[str]) -> Dict[str, str]:
     min_len = min(len(filename) for filename in split_filenames)
     prefix = 0
 
-    while prefix < min_len \
-            and all_equal(filename[prefix] for filename in split_filenames):
+    while prefix < min_len and all_equal(
+        filename[prefix] for filename in split_filenames
+    ):
         prefix += 1
 
     # If there’s only one file, keep the last component
@@ -99,30 +102,41 @@ def auto_extract(archive_path: str, dest_path: str) -> bool:
     :param dest_path: destination folder for the archive contents
     :returns: true if something was extracted, false if not a supported archive
     """
-    if archive_path.endswith('.zip'):
+    if archive_path.endswith(".zip"):
         with zipfile.ZipFile(archive_path) as zip_archive:
-            _auto_extract(zip_archive.namelist(), zip_archive.getinfo,
-                          zip_archive.open, lambda member: member.is_dir(),
-                          lambda member: member.external_attr >> 16 & 0x1FF,
-                          dest_path)
+            _auto_extract(
+                zip_archive.namelist(),
+                zip_archive.getinfo,
+                zip_archive.open,
+                lambda member: member.is_dir(),
+                lambda member: member.external_attr >> 16 & 0x1FF,
+                dest_path,
+            )
         return True
 
-    if archive_path.endswith('.tar.gz'):
-        with tarfile.open(archive_path, mode='r:gz') as tar_archive:
-            _auto_extract(tar_archive.getnames(), tar_archive.getmember,
-                          tar_archive.extractfile,
-                          lambda member: member.isdir(),
-                          lambda member: member.mode, dest_path)
+    if archive_path.endswith(".tar.gz"):
+        with tarfile.open(archive_path, mode="r:gz") as tar_archive:
+            _auto_extract(
+                tar_archive.getnames(),
+                tar_archive.getmember,
+                tar_archive.extractfile,
+                lambda member: member.isdir(),
+                lambda member: member.mode,
+                dest_path,
+            )
         return True
 
     return False
 
 
 def _auto_extract(  # pylint:disable=too-many-arguments
-        members: List[str], getinfo: Callable[[str], Any],
-        extract: Callable[[Any], Optional[IO[bytes]]], isdir: Callable[[Any],
-                                                                       bool],
-        getmode: Callable[[Any], int], dest_path: str) -> None:
+    members: List[str],
+    getinfo: Callable[[str], Any],
+    extract: Callable[[Any], Optional[IO[bytes]]],
+    isdir: Callable[[Any], bool],
+    getmode: Callable[[Any], int],
+    dest_path: str,
+) -> None:
     """
     Generic implementation of automatic archive extraction.
 
@@ -145,7 +159,7 @@ def _auto_extract(  # pylint:disable=too-many-arguments
             source = extract(member)
             assert source is not None
 
-            with source, open(file_path, 'wb') as target:
+            with source, open(file_path, "wb") as target:
                 shutil.copyfileobj(source, target)
 
             mode = getmode(member)
@@ -153,10 +167,12 @@ def _auto_extract(  # pylint:disable=too-many-arguments
                 os.chmod(file_path, mode)
 
 
-def query_user(question: str,
-               default: str,
-               options: Optional[List[str]] = None,
-               aliases: Optional[Dict[str, str]] = None):
+def query_user(
+    question: str,
+    default: str,
+    options: Optional[List[str]] = None,
+    aliases: Optional[Dict[str, str]] = None,
+):
     """
     Ask the user to make a choice.
 
@@ -166,17 +182,18 @@ def query_user(question: str,
     :param aliases: accepted aliases for the valid options
     :returns: option chosen by the user
     """
-    options = options or ['y', 'n']
-    aliases = aliases or {'yes': 'y', 'no': 'n'}
+    options = options or ["y", "n"]
+    aliases = aliases or {"yes": "y", "no": "n"}
 
     if default not in options:
-        raise ValueError(f'Default value {default} is not a valid option')
+        raise ValueError(f"Default value {default} is not a valid option")
 
-    prompt = '/'.join(option if option != default else option.upper()
-                      for option in options)
+    prompt = "/".join(
+        option if option != default else option.upper() for option in options
+    )
 
     while True:
-        sys.stdout.write(f'{question} [{prompt}] ')
+        sys.stdout.write(f"{question} [{prompt}] ")
         choice = input().lower()
 
         if not choice:
@@ -188,4 +205,4 @@ def query_user(question: str,
         if choice in aliases:
             return aliases[choice]
 
-        print('Invalid answer. Please choose among the valid options.')
+        print("Invalid answer. Please choose among the valid options.")

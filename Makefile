@@ -62,13 +62,13 @@ format:
 	@echo "==> Checking Bash formatting"
 	shfmt -d .
 	@echo "==> Checking Python formatting"
-	yapf --diff --recursive scripts
+	black --check --diff scripts
 
 format-fix:
 	@echo "==> Fixing Bash formatting"
 	shfmt -l -w .
 	@echo "==> Fixing Python formatting"
-	yapf --in-place --recursive scripts
+	black scripts
 
 lint:
 	@echo "==> Linting Bash scripts"
