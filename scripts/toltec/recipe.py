@@ -443,10 +443,11 @@ License: {self.license}
 
         # Convert install scripts to Debian format
         scripts = {}
+        variables = {**self._bash_variables, 'pkgname': self.name}
         script_header = f'''\
 #!/usr/bin/env bash
 set -e
-{bash.put_variables(self._bash_variables)}
+{bash.put_variables(variables)}
 {_INSTALL_LIB}
 '''
 
