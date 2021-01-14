@@ -76,7 +76,7 @@ lint:
 	@echo "==> Typechecking Python files"
 	MYPYPATH=scripts mypy scripts
 	@echo "==> Linting Python files"
-	pylint scripts
+	PYTHONPATH=: pylint scripts
 	@echo "==> Verifying that the bootstrap checksum is correct"
 	./scripts/bootstrap/checksum-check
 
