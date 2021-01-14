@@ -38,7 +38,7 @@ jobs:
 
                 # Install black
                 pip3 install wheel setuptools
-                pip install black==20.8b1
+                pip3 install black==20.8b1
             - name: Check formatting
               run: make format
             - name: Check for erroneous constructs
